@@ -49,8 +49,9 @@ The API comes up at `http://localhost:8080`.
 | PUT    | `/notes/{id}` | `NoteRequest`   | 200     | 404 if not found, 400 if invalid |
 | DELETE | `/notes/{id}` | —               | 204     | 404 if not found              |
 
-`NoteRequest` is `{ "title": "...", "content": "..." }`. The server controls `id`,
-`createdAt`, and `updatedAt` — clients cannot set them.
+`NoteRequest` is `{ "title": "...", "content": "...", "tags": ["..."] }` (tags
+optional). The server controls `id`, `createdAt`, and `updatedAt` — clients
+cannot set them.
 
 ### Example
 
@@ -78,8 +79,9 @@ This repo is a learning project, so it ships with plain-language concept notes i
 - [Controllers](docs/02-controllers.md) — the HTTP layer and its annotations
 - [DTOs](docs/03-dtos.md) — what a DTO is and why it's separate from the entity
 - [pom.xml & Maven](docs/04-pom-and-maven.md) — the build file, section by section
+- [Tags & JPA collections](docs/05-tags-and-collections.md) — `@ElementCollection`, `Set` vs `List`, collection validation
 
 ## Status
 
-Working CRUD slice with validation. Possible next steps: tags, search, automated
-tests (MockMvc / `@DataJpaTest`), and swapping H2 for PostgreSQL.
+Working CRUD slice with validation and tags. Possible next steps: search,
+automated tests (MockMvc / `@DataJpaTest`), and swapping H2 for PostgreSQL.

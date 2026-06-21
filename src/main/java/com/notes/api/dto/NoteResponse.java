@@ -1,6 +1,7 @@
 package com.notes.api.dto;
 
 import java.time.Instant;
+import java.util.Set;
 
 import com.notes.api.model.Note;
 
@@ -13,6 +14,7 @@ public record NoteResponse(
 		Long id,
 		String title,
 		String content,
+		Set<String> tags,
 		Instant createdAt,
 		Instant updatedAt
 ) {
@@ -25,6 +27,7 @@ public record NoteResponse(
 				note.getId(),
 				note.getTitle(),
 				note.getContent(),
+				note.getTags(),
 				note.getCreatedAt(),
 				note.getUpdatedAt());
 	}

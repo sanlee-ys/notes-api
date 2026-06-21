@@ -1,6 +1,9 @@
 package com.notes.api.controller;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -75,27 +78,25 @@ public class NoteController {
 	 * HTTP 400. Because {@link NoteRequest} has no id or timestamp fields, a
 	 * client cannot set those server-controlled values.</p>
 	 *
-	 * @param request the validated create payload (title + content)
+	 * @param request the validated create payload (title + content + optional tags)
 	 * @return the created note as a response DTO (HTTP 201)
 	 */
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public NoteResponse create(@Valid @RequestBody NoteRequest request) {
-		Note saved = service.create(new Note(request.title(), request.content()));
-		return NoteResponse.from(saved);
+		return NoteResponse.from(service.create(toEntity(request)));
 	}
 
 	/**
-	 * Replaces the title and content of an existing note.
+	 * Replaces the title, content, and tags of an existing note.
 	 *
 	 * @param id      the id of the note to update
-	 * @param request the validated payload with the new title + content
+	 * @param request the validated payload with the new title, content, and tags
 	 * @return the updated note as a response DTO (HTTP 200); HTTP 404 if it does not exist
 	 */
 	@PutMapping("/{id}")
 	public NoteResponse update(@PathVariable Long id, @Valid @RequestBody NoteRequest request) {
-		Note updated = service.update(id, new Note(request.title(), request.content()));
-		return NoteResponse.from(updated);
+		return NoteResponse.from(service.update(id, toEntity(request)));
 	}
 
 	/**
@@ -108,5 +109,36 @@ public class NoteController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable Long id) {
 		service.delete(id);
+	}
+
+	/**
+	 * Builds a Note entity from a validated request, cleaning the tags on the way.
+	 *
+	 * @param request the incoming request DTO
+	 * @return a transient Note carrying the request's title, content, and cleaned tags
+	 */
+	private static Note toEntity(NoteRequest request) {
+		Note note = new Note(request.title(), request.content());
+		note.setTags(cleanTags(request.tags()));
+		return note;
+	}
+
+	/**
+	 * Normalizes incoming tags: drops nulls/blanks and trims whitespace. The
+	 * resulting {@link Set} also removes exact duplicates. (Case is preserved as
+	 * the client sent it — lowercasing would be a separate design choice.)
+	 *
+	 * @param raw the tags from the request (may be null)
+	 * @return a clean, de-duplicated, order-preserving set of tags
+	 */
+	private static Set<String> cleanTags(Set<String> raw) {
+		if (raw == null) {
+			return new LinkedHashSet<>();
+		}
+		return raw.stream()
+				.filter(tag -> tag != null)
+				.map(String::trim)
+				.filter(tag -> !tag.isEmpty())
+				.collect(Collectors.toCollection(LinkedHashSet::new));
 	}
 }

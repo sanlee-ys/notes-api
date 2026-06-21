@@ -77,7 +77,7 @@ public class NoteService {
 	}
 
 	/**
-	 * Updates the title and content of an existing note.
+	 * Updates the title, content, and tags of an existing note.
 	 *
 	 * <p>Read-modify-write: the existing row is loaded, its fields are overwritten,
 	 * and it is saved — all inside one transaction ({@code @Transactional}), so the
@@ -94,6 +94,7 @@ public class NoteService {
 		Note existing = findById(id);
 		existing.setTitle(changes.getTitle());
 		existing.setContent(changes.getContent());
+		existing.setTags(changes.getTags());
 		return repository.save(existing);
 	}
 

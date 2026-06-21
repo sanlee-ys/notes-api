@@ -14,6 +14,8 @@ Suggested reading order:
    entity to the outside world.
 4. **[pom.xml & Maven](04-pom-and-maven.md)** — the build file, section by section,
    for anyone who hasn't touched Maven in years.
+5. **[Tags & JPA collections](05-tags-and-collections.md)** — `@ElementCollection`,
+   `Set` vs `List`, validating a collection, and when to upgrade to a `Tag` entity.
 
 Each note points at the real files in `src/main/java/com/notes/api/` so you can
 read the explanation and the code side by side.
