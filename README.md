@@ -69,6 +69,16 @@ curl -s -X POST http://localhost:8080/notes \
 # -> 400 {"title":"title must not be blank","content":"content must not be blank"}
 ```
 
+## Learning notes
+
+This repo is a learning project, so it ships with plain-language concept notes in
+[`docs/`](docs/README.md):
+
+- [Why it's structured this way](docs/01-architecture.md) — the layers and a request's journey
+- [Controllers](docs/02-controllers.md) — the HTTP layer and its annotations
+- [DTOs](docs/03-dtos.md) — what a DTO is and why it's separate from the entity
+- [pom.xml & Maven](docs/04-pom-and-maven.md) — the build file, section by section
+
 ## Status
 
 Working CRUD slice with validation. Possible next steps: tags, search, automated
