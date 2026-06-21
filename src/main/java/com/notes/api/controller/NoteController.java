@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -43,18 +44,23 @@ public class NoteController {
 	}
 
 	/**
-	 * Lists all notes.
+	 * Lists notes, optionally filtered by free text and/or a tag.
 	 *
-	 * <p>{@code stream().map(NoteResponse::from).toList()} is Java's pipeline
-	 * equivalent of a Python list comprehension: take each entity, convert it to a
-	 * response DTO, collect into a list. {@code NoteResponse::from} is a method
-	 * reference — shorthand for the lambda {@code n -> NoteResponse.from(n)}.</p>
+	 * <p>Both query params are optional ({@code required = false}). With neither,
+	 * this returns every note. {@code stream().map(NoteResponse::from).toList()} is
+	 * Java's pipeline equivalent of a Python list comprehension: take each entity,
+	 * convert it to a response DTO, collect into a list. {@code NoteResponse::from}
+	 * is a method reference — shorthand for {@code n -> NoteResponse.from(n)}.</p>
 	 *
-	 * @return every note as a list of response DTOs (HTTP 200)
+	 * @param q   optional substring to match in title/content (e.g. {@code ?q=milk})
+	 * @param tag optional exact tag to require (e.g. {@code ?tag=java})
+	 * @return matching notes as response DTOs (HTTP 200)
 	 */
 	@GetMapping
-	public List<NoteResponse> getAll() {
-		return service.findAll().stream()
+	public List<NoteResponse> getAll(
+			@RequestParam(required = false) String q,
+			@RequestParam(required = false) String tag) {
+		return service.search(q, tag).stream()
 				.map(NoteResponse::from)
 				.toList();
 	}

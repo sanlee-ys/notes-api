@@ -16,6 +16,8 @@ Suggested reading order:
    for anyone who hasn't touched Maven in years.
 5. **[Tags & JPA collections](05-tags-and-collections.md)** — `@ElementCollection`,
    `Set` vs `List`, validating a collection, and when to upgrade to a `Tag` entity.
+6. **[Search & queries](06-search-and-queries.md)** — derived queries vs `@Query`,
+   JPQL, and the optional-filter pattern behind `GET /notes?q=&tag=`.
 
 Each note points at the real files in `src/main/java/com/notes/api/` so you can
 read the explanation and the code side by side.

@@ -43,7 +43,7 @@ The API comes up at `http://localhost:8080`.
 
 | Method | Path          | Body            | Success | Notes                         |
 |--------|---------------|-----------------|---------|-------------------------------|
-| GET    | `/notes`      | —               | 200     | List all notes                |
+| GET    | `/notes`      | —               | 200     | List notes; optional `?q=` text & `?tag=` filters |
 | GET    | `/notes/{id}` | —               | 200     | 404 if not found              |
 | POST   | `/notes`      | `NoteRequest`   | 201     | 400 if title/content blank    |
 | PUT    | `/notes/{id}` | `NoteRequest`   | 200     | 404 if not found, 400 if invalid |
@@ -80,8 +80,9 @@ This repo is a learning project, so it ships with plain-language concept notes i
 - [DTOs](docs/03-dtos.md) — what a DTO is and why it's separate from the entity
 - [pom.xml & Maven](docs/04-pom-and-maven.md) — the build file, section by section
 - [Tags & JPA collections](docs/05-tags-and-collections.md) — `@ElementCollection`, `Set` vs `List`, collection validation
+- [Search & queries](docs/06-search-and-queries.md) — derived queries vs `@Query`, JPQL, optional filters
 
 ## Status
 
-Working CRUD slice with validation and tags. Possible next steps: search,
-automated tests (MockMvc / `@DataJpaTest`), and swapping H2 for PostgreSQL.
+Working CRUD with validation, tags, and search. Possible next steps: automated
+tests (MockMvc / `@DataJpaTest`), and swapping H2 for PostgreSQL.

@@ -47,6 +47,25 @@ public class NoteService {
 	}
 
 	/**
+	 * Searches notes by optional free text and/or tag.
+	 *
+	 * <p>Blank or whitespace-only parameters are normalized to {@code null} so an
+	 * empty query string (e.g. {@code ?q=}) behaves the same as omitting it. With
+	 * both filters absent this returns every note.</p>
+	 *
+	 * @param q   substring to match in title/content, or null/blank for no text filter
+	 * @param tag exact tag to require, or null/blank for no tag filter
+	 * @return matching notes
+	 */
+	public List<Note> search(String q, String tag) {
+		return repository.search(blankToNull(q), blankToNull(tag));
+	}
+
+	private static String blankToNull(String value) {
+		return (value == null || value.isBlank()) ? null : value.trim();
+	}
+
+	/**
 	 * Looks up a single note by id.
 	 *
 	 * <p>{@code findById} returns {@code Optional<Note>} — Java's "maybe a value"
