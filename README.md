@@ -81,8 +81,10 @@ This repo is a learning project, so it ships with plain-language concept notes i
 - [pom.xml & Maven](docs/04-pom-and-maven.md) — the build file, section by section
 - [Tags & JPA collections](docs/05-tags-and-collections.md) — `@ElementCollection`, `Set` vs `List`, collection validation
 - [Search & queries](docs/06-search-and-queries.md) — derived queries vs `@Query`, JPQL, optional filters
+- [Testing](docs/07-testing.md) — the test pyramid: Mockito, `@DataJpaTest`, `@WebMvcTest` + `MockMvc`
 
 ## Status
 
-Working CRUD with validation, tags, and search. Possible next steps: automated
-tests (MockMvc / `@DataJpaTest`), and swapping H2 for PostgreSQL.
+Working CRUD with validation, tags, search, and an automated test suite (15
+tests: Mockito unit, `@DataJpaTest`, `@WebMvcTest`). Run them with `./mvnw test`.
+Possible next step: swap H2 for PostgreSQL.

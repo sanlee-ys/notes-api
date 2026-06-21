@@ -18,6 +18,8 @@ Suggested reading order:
    `Set` vs `List`, validating a collection, and when to upgrade to a `Tag` entity.
 6. **[Search & queries](06-search-and-queries.md)** — derived queries vs `@Query`,
    JPQL, and the optional-filter pattern behind `GET /notes?q=&tag=`.
+7. **[Testing](07-testing.md)** — the test pyramid: Mockito unit tests,
+   `@DataJpaTest`, and `@WebMvcTest` + `MockMvc`.
 
 Each note points at the real files in `src/main/java/com/notes/api/` so you can
 read the explanation and the code side by side.
