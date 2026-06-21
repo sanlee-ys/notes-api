@@ -2,9 +2,11 @@ package com.notes.api.service;
 
 import java.util.List;
 
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.notes.api.event.NoteCreated;
 import com.notes.api.exception.NoteNotFoundException;
 import com.notes.api.model.Note;
 import com.notes.api.repository.NoteRepository;
@@ -21,20 +23,26 @@ import com.notes.api.repository.NoteRepository;
 @Service
 public class NoteService {
 
+	/** Topic carrying note lifecycle events, keyed by note id so per-note order holds. */
+	private static final String NOTE_EVENTS_TOPIC = "note-events";
+
 	private final NoteRepository repository;
+	private final KafkaTemplate<String, Object> kafkaTemplate;
 
 	/**
-	 * Spring injects the repository here via constructor injection — it sees the
-	 * single constructor and supplies the {@link NoteRepository} bean automatically.
+	 * Spring injects the repository and Kafka template via constructor injection — it
+	 * sees the single constructor and supplies the matching beans automatically.
 	 *
-	 * <p>Preferred over field {@code @Autowired}: the field can be {@code final}
-	 * (set once, never reassigned) and the class is trivial to unit-test with a
-	 * plain {@code new NoteService(mockRepo)} — no Spring container required.</p>
+	 * <p>Preferred over field {@code @Autowired}: the fields can be {@code final}
+	 * (set once, never reassigned) and the class is trivial to unit-test with a plain
+	 * {@code new NoteService(mockRepo, mockTemplate)} — no Spring container required.</p>
 	 *
-	 * @param repository the data-access bean for notes
+	 * @param repository    the data-access bean for notes
+	 * @param kafkaTemplate publishes domain events to Kafka
 	 */
-	public NoteService(NoteRepository repository) {
+	public NoteService(NoteRepository repository, KafkaTemplate<String, Object> kafkaTemplate) {
 		this.repository = repository;
+		this.kafkaTemplate = kafkaTemplate;
 	}
 
 	/**
@@ -83,16 +91,26 @@ public class NoteService {
 	}
 
 	/**
-	 * Saves a brand-new note.
+	 * Saves a brand-new note and publishes a {@link NoteCreated} event.
 	 *
 	 * <p>The id and timestamps are assigned by the database and Hibernate on
 	 * insert, so any such values on the incoming object are irrelevant.</p>
+	 *
+	 * <p>The event is published <em>after</em> the save returns, i.e. after the row
+	 * is committed. The DB write and the Kafka send are <strong>not</strong> atomic —
+	 * a crash between them could drop the event. That dual-write limitation is
+	 * accepted for now and recorded in the event-driven ADR; the transactional outbox
+	 * pattern is the production-grade fix.</p>
 	 *
 	 * @param note a not-yet-persisted note carrying the title and content
 	 * @return the saved note, now populated with a generated id and timestamps
 	 */
 	public Note create(Note note) {
-		return repository.save(note);
+		Note saved = repository.save(note);
+		NoteCreated event = new NoteCreated(saved.getId(), saved.getTitle(),
+				saved.getContent(), saved.getTags(), saved.getCreatedAt());
+		kafkaTemplate.send(NOTE_EVENTS_TOPIC, saved.getId().toString(), event);
+		return saved;
 	}
 
 	/**
