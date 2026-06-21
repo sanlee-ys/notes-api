@@ -27,6 +27,9 @@ Suggested reading order:
 10. **[Kafka: partitions & brokers](10-kafka-partitions-and-brokers.md)** — the two
    ideas behind Kafka via one grocery-store analogy: brokers, topics, partitions,
    offsets, and keys — mapped to what we saw in kafka-ui.
+11. **[Event-driven architecture](11-event-driven-architecture.md)** — what changed when
+   `create()` started publishing a `NoteCreated` event: decoupling, resilience, and the
+   honest costs (eventual consistency, the dual-write problem, at-least-once delivery).
 
 Each note points at the real files in `src/main/java/com/notes/api/` so you can
 read the explanation and the code side by side.
