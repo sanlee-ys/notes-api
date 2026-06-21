@@ -96,7 +96,8 @@ Kafka is built on top of these two ideas.
 
 ## Where this lives in the code
 
-- Producer: `src/main/java/com/notes/api/smoke/SmokeKafkaProducer.java` (throwaway — it
-  gets replaced by real `NoteCreated` events).
+- Producer: `NoteService.create()` publishes a `NoteCreated` event
+  (`src/main/java/com/notes/api/event/NoteCreated.java`) to the `note-events` topic,
+  keyed by the note id.
 - Broker address + serializers: `src/main/resources/application.properties`.
 - The broker itself: the `local/docker-compose.yml` stack.

@@ -2,10 +2,14 @@ package com.notes.api.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -15,7 +19,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
 
+import com.notes.api.event.NoteCreated;
 import com.notes.api.exception.NoteNotFoundException;
 import com.notes.api.model.Note;
 import com.notes.api.repository.NoteRepository;
@@ -23,16 +29,19 @@ import com.notes.api.repository.NoteRepository;
 /**
  * Unit tests for the service's business rules.
  *
- * <p>No Spring here at all. {@code @Mock} gives us a fake repository and
- * {@code @InjectMocks} builds a real {@link NoteService} with that fake passed
- * to its constructor — which is only possible because we used constructor
- * injection. These tests run in milliseconds and assert logic, not wiring.</p>
+ * <p>No Spring here at all. {@code @Mock} gives us fakes and {@code @InjectMocks}
+ * builds a real {@link NoteService} with those fakes passed to its constructor —
+ * which is only possible because we used constructor injection. These tests run in
+ * milliseconds and assert logic, not wiring.</p>
  */
 @ExtendWith(MockitoExtension.class)
 class NoteServiceTest {
 
 	@Mock
 	private NoteRepository repository;
+
+	@Mock
+	private KafkaTemplate<String, Object> kafkaTemplate;
 
 	@InjectMocks
 	private NoteService service;
@@ -51,6 +60,24 @@ class NoteServiceTest {
 
 		assertThatThrownBy(() -> service.findById(99L))
 				.isInstanceOf(NoteNotFoundException.class);
+	}
+
+	@Test
+	void create_savesNote_andPublishesNoteCreatedEvent() {
+		Note toSave = new Note("t", "c");
+		// id and createdAt are JPA-assigned, so use a mock to control the saved state.
+		Note saved = mock(Note.class);
+		when(saved.getId()).thenReturn(1L);
+		when(saved.getTitle()).thenReturn("t");
+		when(saved.getContent()).thenReturn("c");
+		when(saved.getTags()).thenReturn(Set.of("java"));
+		when(saved.getCreatedAt()).thenReturn(Instant.now());
+		when(repository.save(toSave)).thenReturn(saved);
+
+		service.create(toSave);
+
+		verify(repository).save(toSave);
+		verify(kafkaTemplate).send(eq("note-events"), eq("1"), any(NoteCreated.class));
 	}
 
 	@Test
