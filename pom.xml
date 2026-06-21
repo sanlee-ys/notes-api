@@ -47,6 +47,14 @@
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
 
+		<!-- Kafka (Phase 0). The Boot STARTER pulls spring-kafka AND Boot's Kafka auto-config
+		     (KafkaTemplate, ProducerFactory, ...). Under Boot 4's modular autoconfig, the raw
+		     org.springframework.kafka:spring-kafka library alone does NOT auto-configure. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-kafka</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>

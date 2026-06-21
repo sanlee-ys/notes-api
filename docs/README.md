@@ -24,6 +24,9 @@ Suggested reading order:
    schema migrations, and three real "works on H2, breaks on Postgres" lessons.
 9. **[Test coverage](09-coverage.md)** — JaCoCo, line vs. branch, and why coverage
    is a guide rather than a target.
+10. **[Kafka: partitions & brokers](10-kafka-partitions-and-brokers.md)** — the two
+   ideas behind Kafka via one grocery-store analogy: brokers, topics, partitions,
+   offsets, and keys — mapped to what we saw in kafka-ui.
 
 Each note points at the real files in `src/main/java/com/notes/api/` so you can
 read the explanation and the code side by side.
