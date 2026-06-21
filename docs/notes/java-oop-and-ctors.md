@@ -1,10 +1,14 @@
 # OOP & Constructors — Why These Are Classes
 
-> Personal OOP refresher, grounded in *this* repo's code. Companion to
-> `classes-vs-functions.md` in the **defense-news-classifier** repo, which shows the *other*
-> half: where plain functions are the right call. The lesson is the contrast — that project's
-> generator has no state to hold, so it's functions; the code here has long-lived things with
-> rules to protect, so it's classes.
+> **📖 The concept lives in [`learning-notes`](https://github.com/sanlee-ys/learning-notes) (canonical).**
+> Plain-language hub: [13 — Classes vs functions](https://github.com/sanlee-ys/learning-notes/blob/main/13-classes-vs-functions.md)
+> and [14 — Constructors & DI](https://github.com/sanlee-ys/learning-notes/blob/main/14-constructors-and-dependency-injection.md),
+> linked on the [interactive concept map](https://sanlee-ys.github.io/learning-notes/concept-map.html).
+> Edit the concept *there*; this note just keeps the **Java-specific** depth (the layered
+> architecture + Mermaid graph and the real constructors).
+>
+> Personal OOP refresher, grounded in *this* repo's code — the Java side, where classes are
+> the right call. For the Python side of the same idea, see the hub above.
 
 ## The one idea (mirror image of the Python note)
 
