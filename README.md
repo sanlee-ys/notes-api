@@ -10,7 +10,8 @@ handling.
 
 - **Java 21** (bytecode target; builds fine on newer JDKs)
 - **Spring Boot 4.1** — Web MVC, Data JPA, Validation
-- **Hibernate** ORM with an **H2** in-memory database
+- **Hibernate** ORM with **H2** (in-memory, default) or **PostgreSQL** (the `postgres` profile)
+- **Flyway** schema migrations on the Postgres profile
 - **Maven** (via the bundled Maven Wrapper — no global Maven install needed)
 
 ## Architecture
@@ -37,7 +38,21 @@ You need a JDK 17+ on `JAVA_HOME`. Then, from the project root:
 .\mvnw.cmd spring-boot:run      # Windows PowerShell
 ```
 
-The API comes up at `http://localhost:8080`.
+The API comes up at `http://localhost:8080`. This default uses an in-memory H2
+database, so data resets on each restart.
+
+### Running against PostgreSQL
+
+With a Postgres reachable at `localhost:5432` and a `notesdb` database, activate
+the `postgres` profile — Flyway creates the schema and data persists across restarts:
+
+```bash
+SPRING_PROFILES_ACTIVE=postgres ./mvnw spring-boot:run        # macOS/Linux
+$env:SPRING_PROFILES_ACTIVE='postgres'; .\mvnw.cmd spring-boot:run   # Windows PowerShell
+```
+
+Set `POSTGRES_PASSWORD` for the DB password (defaults to `postgres` for local dev).
+See [docs/08](docs/08-postgres-and-flyway.md) for the full walkthrough.
 
 ## API
 
@@ -82,9 +97,9 @@ This repo is a learning project, so it ships with plain-language concept notes i
 - [Tags & JPA collections](docs/05-tags-and-collections.md) — `@ElementCollection`, `Set` vs `List`, collection validation
 - [Search & queries](docs/06-search-and-queries.md) — derived queries vs `@Query`, JPQL, optional filters
 - [Testing](docs/07-testing.md) — the test pyramid: Mockito, `@DataJpaTest`, `@WebMvcTest` + `MockMvc`
+- [PostgreSQL & Flyway](docs/08-postgres-and-flyway.md) — profiles, external config, schema migrations
 
 ## Status
 
-Working CRUD with validation, tags, search, and an automated test suite (15
-tests: Mockito unit, `@DataJpaTest`, `@WebMvcTest`). Run them with `./mvnw test`.
-Possible next step: swap H2 for PostgreSQL.
+Working CRUD with validation, tags, and search; a 15-test suite (`./mvnw test`);
+and an optional PostgreSQL profile with Flyway migrations for durable storage.

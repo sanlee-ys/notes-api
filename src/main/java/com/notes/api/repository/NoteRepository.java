@@ -44,12 +44,16 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
 	 * @param tag case-insensitive exact tag to require (nullable)
 	 * @return matching notes
 	 */
+	// CAST(:param AS String) gives the bind parameter an explicit text type. Without
+	// it, a null argument is sent untyped and PostgreSQL infers it as `bytea`, which
+	// has no LOWER() function ("function lower(bytea) does not exist"). H2 tolerated
+	// the untyped null; Postgres does not — a real "works on H2, breaks on Postgres".
 	@Query("""
 			SELECT DISTINCT n FROM Note n LEFT JOIN n.tags t
 			WHERE (:q IS NULL
-			       OR LOWER(n.title) LIKE LOWER(CONCAT('%', :q, '%'))
-			       OR LOWER(n.content) LIKE LOWER(CONCAT('%', :q, '%')))
-			  AND (:tag IS NULL OR LOWER(t) = LOWER(:tag))
+			       OR LOWER(n.title) LIKE LOWER(CONCAT('%', CAST(:q AS String), '%'))
+			       OR LOWER(n.content) LIKE LOWER(CONCAT('%', CAST(:q AS String), '%')))
+			  AND (:tag IS NULL OR LOWER(t) = LOWER(CAST(:tag AS String)))
 			""")
 	List<Note> search(@Param("q") String q, @Param("tag") String tag);
 }

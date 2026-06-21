@@ -20,6 +20,8 @@ Suggested reading order:
    JPQL, and the optional-filter pattern behind `GET /notes?q=&tag=`.
 7. **[Testing](07-testing.md)** — the test pyramid: Mockito unit tests,
    `@DataJpaTest`, and `@WebMvcTest` + `MockMvc`.
+8. **[PostgreSQL & Flyway](08-postgres-and-flyway.md)** — profiles, external config,
+   schema migrations, and three real "works on H2, breaks on Postgres" lessons.
 
 Each note points at the real files in `src/main/java/com/notes/api/` so you can
 read the explanation and the code side by side.
