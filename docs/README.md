@@ -22,6 +22,8 @@ Suggested reading order:
    `@DataJpaTest`, and `@WebMvcTest` + `MockMvc`.
 8. **[PostgreSQL & Flyway](08-postgres-and-flyway.md)** — profiles, external config,
    schema migrations, and three real "works on H2, breaks on Postgres" lessons.
+9. **[Test coverage](09-coverage.md)** — JaCoCo, line vs. branch, and why coverage
+   is a guide rather than a target.
 
 Each note points at the real files in `src/main/java/com/notes/api/` so you can
 read the explanation and the code side by side.

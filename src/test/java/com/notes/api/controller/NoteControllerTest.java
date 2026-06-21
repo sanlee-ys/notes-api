@@ -1,11 +1,14 @@
 package com.notes.api.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -82,5 +85,37 @@ class NoteControllerTest {
 				.andExpect(status().isOk());
 
 		verify(service).search("milk", "home");
+	}
+
+	@Test
+	void getOne_returns200_andBody() throws Exception {
+		when(service.findById(1L)).thenReturn(new Note("Buy milk", "2% and oat"));
+
+		mockMvc.perform(get("/notes/1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.title").value("Buy milk"))
+				.andExpect(jsonPath("$.content").value("2% and oat"));
+	}
+
+	@Test
+	void update_returns200_andBody() throws Exception {
+		when(service.update(eq(1L), any(Note.class)))
+				.thenReturn(new Note("New title", "New content"));
+
+		mockMvc.perform(put("/notes/1")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"title":"New title","content":"New content"}"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.title").value("New title"))
+				.andExpect(jsonPath("$.content").value("New content"));
+	}
+
+	@Test
+	void delete_returns204_andDelegatesToService() throws Exception {
+		mockMvc.perform(delete("/notes/1"))
+				.andExpect(status().isNoContent());
+
+		verify(service).delete(1L);
 	}
 }

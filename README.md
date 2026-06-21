@@ -98,8 +98,10 @@ This repo is a learning project, so it ships with plain-language concept notes i
 - [Search & queries](docs/06-search-and-queries.md) — derived queries vs `@Query`, JPQL, optional filters
 - [Testing](docs/07-testing.md) — the test pyramid: Mockito, `@DataJpaTest`, `@WebMvcTest` + `MockMvc`
 - [PostgreSQL & Flyway](docs/08-postgres-and-flyway.md) — profiles, external config, schema migrations
+- [Test coverage](docs/09-coverage.md) — JaCoCo, line vs. branch, coverage as a guide
 
 ## Status
 
-Working CRUD with validation, tags, and search; a 15-test suite (`./mvnw test`);
-and an optional PostgreSQL profile with Flyway migrations for durable storage.
+Working CRUD with validation, tags, and search; an 18-test suite (`./mvnw test`)
+at 97% line coverage (JaCoCo); and an optional PostgreSQL profile with Flyway
+migrations for durable storage.
