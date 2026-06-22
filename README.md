@@ -1,5 +1,7 @@
 # notes-api
 
+![CI](https://github.com/sanlee-ys/notes-api/actions/workflows/ci.yml/badge.svg)
+
 A small, well-commented **Notes REST API** built with **Spring Boot 4** — a learning
 project for getting back into Java by building something real rather than toy snippets.
 It demonstrates the classic layered architecture (controller → service → repository →
