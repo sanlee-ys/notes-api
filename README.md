@@ -105,5 +105,5 @@ This repo is a learning project, so it ships with plain-language concept notes i
 ## Status
 
 Working CRUD with validation, tags, and search; a 19-test suite (`./mvnw test`)
-at 97% line coverage (JaCoCo); and an optional PostgreSQL profile with Flyway
-migrations for durable storage.
+at 98.8% line / 68.8% branch coverage (JaCoCo); and an optional PostgreSQL profile
+with Flyway migrations for durable storage.

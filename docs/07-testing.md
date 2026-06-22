@@ -125,3 +125,8 @@ auto-configuration import "doesn't exist," check whether it moved.
 
 On Windows: `.\mvnw.cmd test ...`. The build fails if any test fails, which is
 what makes this a safety net for every future change.
+
+This suite currently exercises **98.8% of lines (80/81)** and **68.8% of branches
+(11/16)**, measured with JaCoCo — branch is materially lower than line because a few
+defensive conditionals only run one way. See [Test coverage](09-coverage.md) for the
+full breakdown and why we don't chase the remaining branch gaps.
