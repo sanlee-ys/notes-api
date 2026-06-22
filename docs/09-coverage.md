@@ -1,6 +1,6 @@
 # Test coverage
 
-"15 tests" (now 18) tells you nothing about *how much of the code they actually
+"15 tests" (now 19) tells you nothing about *how much of the code they actually
 run*. **Code coverage** measures that. We use **JaCoCo**, the standard JVM coverage
 tool (the rough equivalent of `coverage.py` / `pytest-cov` in Python).
 
