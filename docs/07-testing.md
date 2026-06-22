@@ -1,19 +1,19 @@
 # Testing
 
-The project has 15 tests across four classes. They're deliberately written at
+The project has 19 tests across four classes. They're deliberately written at
 three different "levels," which is worth understanding because the level dictates
 the tool, the speed, and what each test can actually catch.
 
 ## The test pyramid
 
 ```
-        ╱ full context ╲          1 test   ~4.2s   (slowest, most realistic)
-       ╱  slice tests   ╲         8 tests  ~1–4s   (one layer + its infra)
-      ╱   unit tests     ╲        6 tests  ~0.2s   (no framework, pure logic)
+        ╱ full context ╲          1 test    ~4.2s   (slowest, most realistic)
+       ╱  slice tests   ╲         11 tests  ~1–4s   (one layer + its infra)
+      ╱   unit tests     ╲        7 tests   ~0.2s   (no framework, pure logic)
 ```
 
 The measured run times line up with the shape: the pure-logic service tests run
-in 0.23s for all six; the full-context boot takes 4.2s for one. **The lesson:**
+in 0.23s for all seven; the full-context boot takes 4.2s for one. **The lesson:**
 push as much testing as possible down to the fast unit level; use the slow,
 realistic tests sparingly. (If you've done pytest, this is the same instinct as
 "lots of plain unit tests, a few integration tests.")
