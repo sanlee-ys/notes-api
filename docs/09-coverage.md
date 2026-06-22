@@ -21,11 +21,11 @@ which lines and branches execute, then writes the report.
 
 | Metric | Coverage |
 |--------|----------|
-| **Line** | **97.3%** (73/75) |
+| **Line** | **98.8%** (80/81) |
 | **Branch** | **68.8%** (11/16) |
 
 Per class, the controller, DTOs, entity, and exception handler are at 100% line
-coverage; the service is at 89%.
+coverage; the service is at 95.7% (22/23).
 
 ## Line vs. branch — read both
 
@@ -33,7 +33,7 @@ coverage; the service is at 89%.
 - **Branch coverage** = "did we test *both* sides of each `if`/`?:`/boolean
   condition." Stricter and more meaningful.
 
-That's why our line number (97%) is much higher than our branch number (69%): most
+That's why our line number (99%) is much higher than our branch number (69%): most
 lines run, but several conditional branches only get exercised one way.
 
 The remaining branch gaps are all **defensive paths** we chose not to chase:
@@ -63,8 +63,8 @@ deleting genuinely-unused code. Coverage is a **guide, not a target** — chasin
 
 Its body is `SpringApplication.run(...)`, which can't meaningfully run under a unit
 test. Including it just dragged the average down for no insight — excluding it keeps
-the number honest. (Before excluding it, line coverage read 88.5%; the real figure
-for testable code is 97.3%.)
+the number honest. (Before excluding it, line coverage read 96.4%; the real figure
+for testable code is 98.8%.)
 
 ## The big caveat: coverage ≠ correctness
 
