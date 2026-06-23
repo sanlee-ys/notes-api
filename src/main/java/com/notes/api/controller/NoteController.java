@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.notes.api.dto.NoteRequest;
 import com.notes.api.dto.NoteResponse;
+import com.notes.api.dto.TagsRequest;
 import com.notes.api.model.Note;
 import com.notes.api.service.NoteService;
 
@@ -103,6 +104,27 @@ public class NoteController {
 	@PutMapping("/{id}")
 	public NoteResponse update(@PathVariable Long id, @Valid @RequestBody NoteRequest request) {
 		return NoteResponse.from(service.update(id, toEntity(request)));
+	}
+
+	/**
+	 * Replaces just the tags of an existing note, leaving title and content untouched.
+	 *
+	 * <p>This is the idempotent writeback seam in the event loop: the classifier
+	 * consumes a {@code NoteCreated} event, classifies the note, and PUTs the
+	 * resulting tag set here. <strong>Replace</strong> (not append) semantics make
+	 * redelivery safe — an at-least-once consumer that sees the same event twice
+	 * converges the note to the same tags instead of accumulating them, which is the
+	 * consumer-idempotency the event design requires (notes-api {@code ADR-001} risk
+	 * R1, {@code system/SYS-005}). Unlike {@link #update}, this takes no title or
+	 * content, so a retag can never clobber the note body.</p>
+	 *
+	 * @param id      the id of the note to retag
+	 * @param request the validated payload carrying the new tag set
+	 * @return the updated note as a response DTO (HTTP 200); HTTP 404 if it does not exist
+	 */
+	@PutMapping("/{id}/tags")
+	public NoteResponse updateTags(@PathVariable Long id, @Valid @RequestBody TagsRequest request) {
+		return NoteResponse.from(service.setTags(id, cleanTags(request.tags())));
 	}
 
 	/**

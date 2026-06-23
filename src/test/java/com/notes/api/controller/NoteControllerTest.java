@@ -1,5 +1,6 @@
 package com.notes.api.controller;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -109,6 +111,34 @@ class NoteControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.title").value("New title"))
 				.andExpect(jsonPath("$.content").value("New content"));
+	}
+
+	@Test
+	void updateTags_returns200_andReplacedTags() throws Exception {
+		Note retagged = new Note("Buy milk", "2% and oat");
+		retagged.setTags(new LinkedHashSet<>(List.of("category:procurement", "domain:land")));
+		when(service.setTags(eq(1L), any())).thenReturn(retagged);
+
+		mockMvc.perform(put("/notes/1/tags")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"tags":["category:procurement","domain:land"]}"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.tags").isArray())
+				.andExpect(jsonPath("$.tags", containsInAnyOrder("category:procurement", "domain:land")));
+
+		verify(service).setTags(eq(1L), any());
+	}
+
+	@Test
+	void updateTags_whenMissing_returns404() throws Exception {
+		when(service.setTags(eq(99L), any())).thenThrow(new NoteNotFoundException(99L));
+
+		mockMvc.perform(put("/notes/99/tags")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"tags":["category:operations"]}"""))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test

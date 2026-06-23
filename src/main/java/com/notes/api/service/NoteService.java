@@ -1,6 +1,7 @@
 package com.notes.api.service;
 
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -132,6 +133,28 @@ public class NoteService {
 		existing.setTitle(changes.getTitle());
 		existing.setContent(changes.getContent());
 		existing.setTags(changes.getTags());
+		return repository.save(existing);
+	}
+
+	/**
+	 * Replaces just the tags of an existing note; title and content are untouched.
+	 *
+	 * <p>Read-modify-write in one transaction, mirroring {@link #update} but scoped to
+	 * tags. Replace semantics make it <strong>idempotent</strong>: applying the same
+	 * tag set repeatedly — as an at-least-once consumer redelivering a
+	 * {@code NoteCreated} event will — leaves the note in the same final state. That
+	 * is the writeback half of the event loop (notes-api {@code ADR-001} risk R1,
+	 * {@code system/SYS-005}).</p>
+	 *
+	 * @param id   the id of the note to retag
+	 * @param tags the new tag set (already cleaned and de-duplicated by the caller)
+	 * @return the updated, persisted note
+	 * @throws NoteNotFoundException if no note has that id
+	 */
+	@Transactional
+	public Note setTags(Long id, Set<String> tags) {
+		Note existing = findById(id);
+		existing.setTags(tags);
 		return repository.save(existing);
 	}
 
