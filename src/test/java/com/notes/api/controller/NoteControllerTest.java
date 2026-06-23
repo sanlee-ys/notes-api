@@ -90,6 +90,24 @@ class NoteControllerTest {
 	}
 
 	@Test
+	void getAll_returnsJsonArrayOfNotes_withContractFields() throws Exception {
+		// Pins the GET /notes read contract (system/SYS-006) on the provider side:
+		// the 200 body is a JSON ARRAY whose elements carry id/title/content/tags —
+		// the exact shape kb-agent's search_notes tool consumes.
+		Note note = new Note("Drone doctrine", "UAV ROE");
+		note.setTags(new LinkedHashSet<>(List.of("domain:air")));
+		when(service.search(null, null)).thenReturn(List.of(note));
+
+		mockMvc.perform(get("/notes"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$").isArray())
+				.andExpect(jsonPath("$[0].title").value("Drone doctrine"))
+				.andExpect(jsonPath("$[0].content").value("UAV ROE"))
+				.andExpect(jsonPath("$[0].tags").isArray())
+				.andExpect(jsonPath("$[0].tags[0]").value("domain:air"));
+	}
+
+	@Test
 	void getOne_returns200_andBody() throws Exception {
 		when(service.findById(1L)).thenReturn(new Note("Buy milk", "2% and oat"));
 
