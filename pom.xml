@@ -150,7 +150,7 @@
 			     Failsafe runs *IT integration tests in the `integration-test`/`verify`
 			     phases. So `./mvnw test` stays fast and Docker-free; `./mvnw verify`
 			     additionally runs the Testcontainers IT, which needs Docker. (The Java
-			     mirror of the classifier's `pytest --run-integration` opt-in.) -->
+			     mirror of the classifier's opt-in integration lane.) -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
