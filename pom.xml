@@ -28,7 +28,24 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<testcontainers.version>1.20.6</testcontainers.version>
 	</properties>
+
+	<!-- Spring Boot 4.1 doesn't manage the org.testcontainers:* artifact versions,
+	     so import the Testcontainers BOM to version junit-jupiter + kafka. 1.20.x is
+	     where the org.testcontainers.kafka.KafkaContainer class (used by the IT) lives. -->
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
