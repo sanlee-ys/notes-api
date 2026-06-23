@@ -109,5 +109,7 @@ This repo is a learning project, so it ships with plain-language concept notes i
 Working CRUD with validation, tags, and search; an event-driven seam that publishes
 `NoteCreated` and an idempotent `PUT /notes/{id}/tags` writeback (the classifier
 consumes the events and writes labels back — `system/SYS-005`); a 23-test suite
-(`./mvnw test`) with line/branch coverage measured by JaCoCo in CI; and an optional
-PostgreSQL profile with Flyway migrations for durable storage.
+(`./mvnw test`) with line/branch coverage measured by JaCoCo in CI, plus a
+Testcontainers integration test (`./mvnw verify`, needs Docker) that asserts a real
+`NoteCreated` lands on the topic; and an optional PostgreSQL profile with Flyway
+migrations for durable storage.

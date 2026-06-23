@@ -90,6 +90,26 @@
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- Integration test (NoteEventPublishingIT): run a real Kafka broker in Docker.
+		     spring-boot-testcontainers gives @ServiceConnection (auto-wires the broker to
+		     spring.kafka.*); junit-jupiter gives @Testcontainers/@Container; kafka is the
+		     broker module. Versions are managed by the Spring Boot 4.1 BOM. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>kafka</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -121,6 +141,24 @@
 						<phase>test</phase>
 						<goals>
 							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Surefire (the default) runs *Test/*Tests unit tests in the `test` phase.
+			     Failsafe runs *IT integration tests in the `integration-test`/`verify`
+			     phases. So `./mvnw test` stays fast and Docker-free; `./mvnw verify`
+			     additionally runs the Testcontainers IT, which needs Docker. (The Java
+			     mirror of the classifier's `pytest --run-integration` opt-in.) -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
 						</goals>
 					</execution>
 				</executions>
