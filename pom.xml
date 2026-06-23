@@ -28,7 +28,24 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<testcontainers.version>1.20.6</testcontainers.version>
 	</properties>
+
+	<!-- Spring Boot 4.1 doesn't manage the org.testcontainers:* artifact versions,
+	     so import the Testcontainers BOM to version junit-jupiter + kafka. 1.20.x is
+	     where the org.testcontainers.kafka.KafkaContainer class (used by the IT) lives. -->
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -90,6 +107,26 @@
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- Integration test (NoteEventPublishingIT): run a real Kafka broker in Docker.
+		     spring-boot-testcontainers gives @ServiceConnection (auto-wires the broker to
+		     spring.kafka.*); junit-jupiter gives @Testcontainers/@Container; kafka is the
+		     broker module. Versions are managed by the Spring Boot 4.1 BOM. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>kafka</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -121,6 +158,24 @@
 						<phase>test</phase>
 						<goals>
 							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Surefire (the default) runs *Test/*Tests unit tests in the `test` phase.
+			     Failsafe runs *IT integration tests in the `integration-test`/`verify`
+			     phases. So `./mvnw test` stays fast and Docker-free; `./mvnw verify`
+			     additionally runs the Testcontainers IT, which needs Docker. (The Java
+			     mirror of the classifier's opt-in integration lane.) -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
 						</goals>
 					</execution>
 				</executions>

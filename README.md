@@ -40,7 +40,8 @@ You need a JDK 17+ on `JAVA_HOME`. Then, from the project root:
 .\mvnw.cmd spring-boot:run      # Windows PowerShell
 ```
 
-The API comes up at `http://localhost:8080`. This default uses an in-memory H2
+The API comes up at `http://localhost:8081` (8081 rather than 8080 so it doesn't
+collide with kafka-ui on the host's 8080). This default uses an in-memory H2
 database, so data resets on each restart.
 
 ### Running against PostgreSQL
@@ -64,6 +65,7 @@ See [docs/08](docs/08-postgres-and-flyway.md) for the full walkthrough.
 | GET    | `/notes/{id}` | —               | 200     | 404 if not found              |
 | POST   | `/notes`      | `NoteRequest`   | 201     | 400 if title/content blank    |
 | PUT    | `/notes/{id}` | `NoteRequest`   | 200     | 404 if not found, 400 if invalid |
+| PUT    | `/notes/{id}/tags` | `TagsRequest` | 200 | Replace just the tags (idempotent writeback seam, `system/SYS-005`); 404 if not found |
 | DELETE | `/notes/{id}` | —               | 204     | 404 if not found              |
 
 `NoteRequest` is `{ "title": "...", "content": "...", "tags": ["..."] }` (tags
@@ -73,7 +75,7 @@ cannot set them.
 ### Example
 
 ```bash
-curl -s -X POST http://localhost:8080/notes \
+curl -s -X POST http://localhost:8081/notes \
   -H "Content-Type: application/json" \
   -d '{"title":"Buy milk","content":"2% and oat"}'
 # -> 201 {"id":1,"title":"Buy milk","content":"2% and oat","createdAt":"...","updatedAt":"..."}
@@ -82,7 +84,7 @@ curl -s -X POST http://localhost:8080/notes \
 A bad request returns the offending fields:
 
 ```bash
-curl -s -X POST http://localhost:8080/notes \
+curl -s -X POST http://localhost:8081/notes \
   -H "Content-Type: application/json" -d '{"title":"","content":""}'
 # -> 400 {"title":"title must not be blank","content":"content must not be blank"}
 ```
@@ -104,6 +106,10 @@ This repo is a learning project, so it ships with plain-language concept notes i
 
 ## Status
 
-Working CRUD with validation, tags, and search; a 19-test suite (`./mvnw test`)
-at 98.8% line / 68.8% branch coverage (JaCoCo); and an optional PostgreSQL profile
-with Flyway migrations for durable storage.
+Working CRUD with validation, tags, and search; an event-driven seam that publishes
+`NoteCreated` and an idempotent `PUT /notes/{id}/tags` writeback (the classifier
+consumes the events and writes labels back — `system/SYS-005`); a 23-test suite
+(`./mvnw test`) with line/branch coverage measured by JaCoCo in CI, plus a
+Testcontainers integration test (`./mvnw verify`, needs Docker) that asserts a real
+`NoteCreated` lands on the topic; and an optional PostgreSQL profile with Flyway
+migrations for durable storage.

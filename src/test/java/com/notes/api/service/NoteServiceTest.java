@@ -98,6 +98,31 @@ class NoteServiceTest {
 	}
 
 	@Test
+	void setTags_replacesTags_andSaves() {
+		Note existing = new Note("t", "c");
+		existing.setTags(new LinkedHashSet<>(Set.of("user-tag")));
+		when(repository.findById(1L)).thenReturn(Optional.of(existing));
+		when(repository.save(existing)).thenReturn(existing);
+
+		Note result = service.setTags(
+				1L, new LinkedHashSet<>(Set.of("category:operations", "domain:sea")));
+
+		// Replace semantics: only the new tags remain (the merge that preserves a
+		// user's own tags lives in the consumer, not here).
+		assertThat(result.getTags())
+				.containsExactlyInAnyOrder("category:operations", "domain:sea");
+		verify(repository).save(existing);
+	}
+
+	@Test
+	void setTags_throws_whenMissing() {
+		when(repository.findById(99L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.setTags(99L, Set.of("x")))
+				.isInstanceOf(NoteNotFoundException.class);
+	}
+
+	@Test
 	void delete_throws_andSkipsDelete_whenMissing() {
 		when(repository.existsById(99L)).thenReturn(false);
 
