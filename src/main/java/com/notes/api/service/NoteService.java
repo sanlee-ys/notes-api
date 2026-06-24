@@ -1,6 +1,8 @@
 package com.notes.api.service;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -132,6 +134,48 @@ public class NoteService {
 		existing.setTitle(changes.getTitle());
 		existing.setContent(changes.getContent());
 		existing.setTags(changes.getTags());
+		return repository.save(existing);
+	}
+
+	/** Tag namespace for the classifier's category label, e.g. {@code category:naval}. */
+	static final String CATEGORY_PREFIX = "category:";
+	/** Tag namespace for the classifier's operational-domain label, e.g. {@code domain:logistics}. */
+	static final String DOMAIN_PREFIX = "domain:";
+
+	/**
+	 * Upserts a note's classification — the category and operational domain the classifier
+	 * produces after consuming a {@link NoteCreated} event.
+	 *
+	 * <p><strong>Idempotent by construction</strong> (see {@code decisions/ADR-002}). The labels
+	 * are stored as <em>namespaced tags</em> ({@code category:<value>}, {@code domain:<value>}) in
+	 * the note's existing tag set. We strip any prior {@code category:*}/{@code domain:*} tags
+	 * first, then add the new pair — an upsert, not an append — so applying the same classification
+	 * twice yields the identical set. That is what makes the writeback safe under Kafka's
+	 * at-least-once redelivery (risk R1) <em>without</em> a consumer-side dedupe table: the contract
+	 * carries the guarantee, not the caller.</p>
+	 *
+	 * <p>Unlike {@link #update}, this never touches title or content, so a side-channel writer
+	 * cannot clobber the note body; and it publishes no event, avoiding a create→classify→write
+	 * feedback loop.</p>
+	 *
+	 * @param id                the id of the note to classify
+	 * @param category          the category label (stored as {@code category:<value>})
+	 * @param operationalDomain the operational-domain label (stored as {@code domain:<value>})
+	 * @return the updated, persisted note
+	 * @throws NoteNotFoundException if no note has that id
+	 */
+	@Transactional
+	public Note classify(Long id, String category, String operationalDomain) {
+		Note existing = findById(id);
+
+		// Upsert, not append: drop any previous classification so a re-run can't accrete stale
+		// labels, then write the current pair. Work on a copy, not the managed collection.
+		Set<String> tags = new LinkedHashSet<>(existing.getTags());
+		tags.removeIf(tag -> tag.startsWith(CATEGORY_PREFIX) || tag.startsWith(DOMAIN_PREFIX));
+		tags.add(CATEGORY_PREFIX + category);
+		tags.add(DOMAIN_PREFIX + operationalDomain);
+
+		existing.setTags(tags);
 		return repository.save(existing);
 	}
 

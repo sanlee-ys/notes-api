@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.notes.api.dto.ClassificationRequest;
 import com.notes.api.dto.NoteRequest;
 import com.notes.api.dto.NoteResponse;
 import com.notes.api.model.Note;
@@ -103,6 +105,23 @@ public class NoteController {
 	@PutMapping("/{id}")
 	public NoteResponse update(@PathVariable Long id, @Valid @RequestBody NoteRequest request) {
 		return NoteResponse.from(service.update(id, toEntity(request)));
+	}
+
+	/**
+	 * Sets a note's classification (category + operational domain).
+	 *
+	 * <p>A <em>partial</em> update used by the classifier service. Unlike {@code PUT}, it touches
+	 * only the classification — never title or content — and it is idempotent: applying the same
+	 * classification twice is a no-op (see {@code decisions/ADR-002}). The labels are stored as
+	 * namespaced tags ({@code category:*}, {@code domain:*}).</p>
+	 *
+	 * @param id      the id of the note to classify
+	 * @param request the validated classification payload (category + operationalDomain)
+	 * @return the updated note as a response DTO (HTTP 200); HTTP 404 if it does not exist
+	 */
+	@PatchMapping("/{id}/classification")
+	public NoteResponse classify(@PathVariable Long id, @Valid @RequestBody ClassificationRequest request) {
+		return NoteResponse.from(service.classify(id, request.category(), request.operationalDomain()));
 	}
 
 	/**

@@ -98,6 +98,47 @@ class NoteServiceTest {
 	}
 
 	@Test
+	void classify_addsNamespacedTags_andPreservesUserTags() {
+		Note existing = new Note("t", "c");
+		existing.setTags(new LinkedHashSet<>(Set.of("home")));
+		when(repository.findById(1L)).thenReturn(Optional.of(existing));
+		when(repository.save(existing)).thenReturn(existing);
+
+		Note result = service.classify(1L, "naval", "logistics");
+
+		assertThat(result.getTags())
+				.containsExactlyInAnyOrder("home", "category:naval", "domain:logistics");
+	}
+
+	@Test
+	void classify_isIdempotent_whenAppliedTwice() {
+		Note existing = new Note("t", "c");
+		when(repository.findById(1L)).thenReturn(Optional.of(existing));
+		when(repository.save(existing)).thenReturn(existing);
+
+		// At-least-once redelivery (R1): a second identical apply must not duplicate or accrete.
+		service.classify(1L, "naval", "logistics");
+		Note result = service.classify(1L, "naval", "logistics");
+
+		assertThat(result.getTags())
+				.containsExactlyInAnyOrder("category:naval", "domain:logistics");
+	}
+
+	@Test
+	void classify_replacesPriorClassification_butKeepsUserTags() {
+		Note existing = new Note("t", "c");
+		existing.setTags(new LinkedHashSet<>(Set.of("home", "category:industry", "domain:naval")));
+		when(repository.findById(1L)).thenReturn(Optional.of(existing));
+		when(repository.save(existing)).thenReturn(existing);
+
+		Note result = service.classify(1L, "procurement", "logistics");
+
+		// Upsert: old category:*/domain:* are dropped, the user's "home" survives.
+		assertThat(result.getTags())
+				.containsExactlyInAnyOrder("home", "category:procurement", "domain:logistics");
+	}
+
+	@Test
 	void delete_throws_andSkipsDelete_whenMissing() {
 		when(repository.existsById(99L)).thenReturn(false);
 

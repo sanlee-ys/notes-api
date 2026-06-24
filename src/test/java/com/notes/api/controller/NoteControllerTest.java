@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -109,6 +110,46 @@ class NoteControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.title").value("New title"))
 				.andExpect(jsonPath("$.content").value("New content"));
+	}
+
+	@Test
+	void classify_returns200_andDelegates() throws Exception {
+		when(service.classify(eq(1L), any(String.class), any(String.class)))
+				.thenReturn(new Note("Buy milk", "2% and oat"));
+
+		mockMvc.perform(patch("/notes/1/classification")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"category":"groceries","operationalDomain":"home"}"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.title").value("Buy milk"));
+
+		verify(service).classify(eq(1L), eq("groceries"), eq("home"));
+	}
+
+	@Test
+	void classify_withBlankCategory_returns400_andSkipsService() throws Exception {
+		mockMvc.perform(patch("/notes/1/classification")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"category":"","operationalDomain":"home"}"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.category").exists());
+
+		// Validation rejects the body before the controller calls the service.
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void classify_whenMissing_returns404() throws Exception {
+		when(service.classify(eq(99L), any(String.class), any(String.class)))
+				.thenThrow(new NoteNotFoundException(99L));
+
+		mockMvc.perform(patch("/notes/99/classification")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"category":"x","operationalDomain":"y"}"""))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test
