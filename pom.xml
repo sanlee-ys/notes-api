@@ -47,9 +47,13 @@
 	</dependencyManagement>
 
 	<dependencies>
+		<!-- H2 web console is a known RCE/data-exposure surface. Kept on the
+		     test classpath only so it can never be enabled in a running app
+		     (it's also explicitly disabled in application.properties). -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-h2console</artifactId>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
