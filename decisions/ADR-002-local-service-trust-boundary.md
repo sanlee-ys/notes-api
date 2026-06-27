@@ -9,9 +9,7 @@
 ## Context
 
 A security review flagged that every `/notes` endpoint is unauthenticated: anyone who can
-reach the port gets full CRUD over all notes, and there is no per-user ownership model. It
-also flagged that the `spring-boot-h2console` dependency shipped at runtime scope, so a single
-property could turn on an unauthenticated database console.
+reach the port gets full CRUD over all notes, and there is no per-user ownership model.
 
 The real question is the **deployment context**, because that sets the severity. In this
 system, `notes-api` is a personal, single-user service: the only client is the `kb-agent`,
@@ -22,42 +20,47 @@ inventing a credential, storing it in two repos, and updating the kb-agent seam 
 real cost and a new secret to manage — to protect a service that should never be on a network
 in the first place.
 
+---
+
 ## Decision
 
 Harden by **shrinking the attack surface and documenting the trust boundary**, rather than
 adding authentication:
 
-- **Bind to loopback by default.** `server.address=${SERVER_ADDRESS:127.0.0.1}` — running the
-  app no longer exposes it on the network. A deliberate, separately-secured deployment can set
-  `SERVER_ADDRESS`, but the safe default requires no thought.
-- **Move `spring-boot-h2console` to `test` scope** and set `spring.h2.console.enabled=false`,
-  so the console can never be enabled in a running app (belt and suspenders).
-- **Don't leak internals in errors:** `server.error.include-stacktrace=never` and
-  `server.error.include-message=never`, so Spring Boot's default error response stays generic
-  (no class names, messages, or stack frames) without overriding the correct status codes —
-  `NoteNotFoundException` still maps to 404, malformed input to 400, etc. (A blanket
-  `@ExceptionHandler(Exception.class)` was considered and rejected: it would intercept those
-  framework/`@ResponseStatus` exceptions and collapse 404/400/405 into 500.)
-- **Record the trust boundary here**: notes-api is trusted-local, single-user, no authn/authz
-  by design. Exposing it beyond loopback is out of contract without revisiting this ADR.
+- **Bind to loopback by default.** `HOST=127.0.0.1` via environment variable — running
+  the app no longer exposes it on the network. A deliberate, separately-secured deployment
+  can set `HOST=0.0.0.0`, but the safe default requires no thought.
+  ```bash
+  uvicorn notes_api.main:app --host ${HOST:-127.0.0.1} --port 8081
+  ```
+- **Don't leak internals in errors:** FastAPI returns structured JSON error responses;
+  SQLAlchemy exceptions are caught at the service layer and converted to clean 404/400
+  responses. Stack traces never reach the HTTP response layer.
+- **Record the trust boundary here**: notes-api is trusted-local, single-user, no
+  authn/authz by design. Exposing it beyond loopback is out of contract without
+  revisiting this ADR.
+
+---
 
 ## Consequences
 
-- **What this makes easier.** Running the service is safe by default; nothing to configure to
-  avoid accidental network exposure. The kb-agent integration is unchanged (still loopback).
-- **What it costs.** No authentication means the boundary *is* the network binding — if someone
-  deliberately sets `SERVER_ADDRESS=0.0.0.0` without adding auth, the service is wide open. That
-  risk is now explicit and owned, not silent.
-- **What it forecloses / revisit triggers.** The moment notes-api needs to be reachable beyond
-  the local machine, or gains a second (especially multi-user) client, this ADR must be
-  superseded by one that adds real authentication (e.g. an API-key filter shared with the
-  kb-agent seam) and, if multi-user, a per-note ownership model.
+- **What this makes easier.** Running the service is safe by default; nothing to configure
+  to avoid accidental network exposure. The kb-agent integration is unchanged (still
+  loopback on port 8081).
+- **What it costs.** No authentication means the boundary *is* the network binding — if
+  someone deliberately sets `HOST=0.0.0.0` without adding auth, the service is wide open.
+  That risk is now explicit and owned, not silent.
+- **What it forecloses / revisit triggers.** The moment notes-api needs to be reachable
+  beyond the local machine, or gains a second (especially multi-user) client, this ADR
+  must be superseded by one that adds real authentication (e.g. an API-key header shared
+  with the kb-agent seam).
+
+---
 
 ## Alternatives Considered
 
 | Option | Reason Not Chosen |
 |--------|-------------------|
-| Add API-key / basic auth now | Real cost (a new shared secret across two repos + a coordinated kb-agent change) to protect a service that shouldn't be networked; over-engineering for a single-user local tool. Deferred to the revisit trigger above. |
-| Add full Spring Security + per-user ownership | Multi-user is explicitly out of scope for this project family; large surface for no current need. |
-| Leave H2 console at runtime scope, just disable via property | One property flip (or a profile) re-enables an unauthenticated DB console; test-scoping removes the dependency from the runtime classpath entirely — a stronger guarantee. |
+| Add API-key / bearer auth now | Real cost (a new shared secret across two repos + a coordinated kb-agent change) to protect a service that shouldn't be networked; over-engineering for a single-user local tool. Deferred to the revisit trigger above. |
+| Add full OAuth2 / per-user ownership | Multi-user is explicitly out of scope for this project family; large surface for no current need. |
 | Do nothing (rely on "it's only local") | The trust boundary was undocumented and the default binding exposed it on all interfaces; an unwritten assumption isn't a control. |

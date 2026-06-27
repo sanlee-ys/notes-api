@@ -1,57 +1,79 @@
-# ADR-001: Make notes-api event-driven by publishing NoteCreated
+# ADR-001: Classify-writeback via FastAPI BackgroundTasks (supersedes Kafka approach)
 
-**Status:** Accepted
-**Date:** 2026-06-21
-**Deciders:** San Lee
+**Status:** Current
+**Date:** 2026-06-27
+**Supersedes:** Kafka-based event-driven design (original v1 Java decision, 2026-06-21)
 
 ---
 
 ## Context
 
-`notes-api` was a synchronous CRUD REST service. The wider system needs the classifier to
-react when a note is created — classify it, then write tags back. Doing that synchronously
-(notes-api calling the classifier inline) would couple the two services, make note creation
-as slow and as fragile as the classifier, and fail note creation outright when the classifier
-is down. The system design (see `system/SYS-003` and the program dependency map) calls for the
-classifier to **consume** note events. Relearning event-driven mechanics firsthand is also an
-explicit goal of the project.
+The notes-api POST /notes endpoint optionally enriches a newly-created note with
+classification tags from the defense-news-classifier service (`category` +
+`operational_domain`). The v1 Java implementation published a `NoteCreated` event to
+a Kafka topic; the classifier consumed it and called back via `PUT /notes/{id}/tags`.
 
-The decision point: how does `notes-api` emit a `NoteCreated` event, and with what consistency
-guarantee between the database write and the Kafka publish?
+The service was ported from Java/Spring Boot to Python/FastAPI to reduce cognitive
+overhead (maintaining Java + Python + ML simultaneously is too much parallel context
+for a single-person portfolio). That port made the Kafka dependency an active liability:
+a local Kafka KRaft cluster adds infrastructure cost with no benefit at single-user,
+low-volume scale.
+
+---
 
 ## Decision
 
-- Publish a **`NoteCreated`** domain event to Kafka whenever a note is created. Topic
-  **`note-events`**, **keyed by the note id** (so per-note events stay ordered), value serialized
-  as **JSON**.
-- Publish from **`NoteService.create()`, immediately after `repository.save()` returns** — the
-  "publish-in-service" approach. The save commits, then we send.
-- **Fat event:** it carries the note's state (id, title, content, tags, createdAt) so the
-  consumer can act without calling back for the content.
-- **Client library:** Spring for Apache Kafka via `spring-boot-starter-kafka`, with Boot 4's
-  Jackson 3 serializer (`JacksonJsonSerializer`).
+Use **FastAPI `BackgroundTasks`** for the classify-writeback seam instead of a message
+broker.
+
+After `POST /notes` returns 201, the response is sent to the caller immediately. A
+background task then calls `CLASSIFIER_URL/classify`, reads the structured response,
+and patches the note's tags via the existing `set_tags` service call. If `CLASSIFIER_URL`
+is unset (the default in tests and local dev), the background task is a no-op.
+
+Errors in the classification call are swallowed — enrichment failure never surfaces to
+the caller and never rolls back note creation.
+
+---
 
 ## Consequences
 
-- **What this makes easier.** Any consumer — the classifier first, later a search indexer or
-  analytics — can subscribe to `note-events` without `notes-api` knowing it exists. Note creation
-  stays fast and survives a classifier outage (the event waits durably in the log).
-- **What it costs (the tradeoff accepted).** The **dual-write problem**: the DB commit and the
-  Kafka send are two systems and are not atomic. A crash between them could leave a saved note
-  with no event. For a single-instance local/learning setup this risk is small and **accepted**;
-  it is documented here and in `NoteService.create()`'s Javadoc. It also introduces **eventual
-  consistency** — a note's tags appear a moment after creation, not synchronously — and
-  **at-least-once** delivery downstream, so consumers must be idempotent (risk R1).
-- **What we'll revisit.** When moving to multiple instances / production, or when event loss
-  becomes unacceptable, adopt the **transactional outbox** (write the event to an outbox table in
-  the same DB transaction; a relay publishes to Kafka). That supersedes publish-in-service.
+**What this makes easier**
+- Zero infrastructure dependencies: no Kafka, no ZooKeeper/KRaft, no consumer group.
+- Local dev is `uvicorn notes_api.main:app --port 8081` with nothing else running.
+- The API contract is identical to v1: same 6 endpoints, same request/response shapes.
+  Callers (kb-agent's `search_notes`) are unaffected.
+
+**What it costs**
+- No at-least-once delivery. A transient classifier outage silently drops the enrichment
+  for that note; there is no retry or dead-letter queue.
+- No replay. If the classifier is upgraded and you want to re-classify existing notes,
+  you re-POST or run a one-off script — there is no event log to consume.
+
+**What it forecloses / revisit triggers**
+This design is correct for a single-user local service. The revisit trigger is: if
+notes-api ever needs durable enrichment guarantees, fan-out to multiple consumers, or
+the ability to replay events, the right move is a proper message broker (Kafka or NATS).
+At that scale, the infrastructure cost is justified.
+
+---
+
+## Historical note: why Kafka was chosen in v1
+
+The original Java implementation deliberately used Kafka to demonstrate event-driven
+architecture in a portfolio context — it was a portfolio signal, not a technical
+requirement. `case-study/README.md` in the architecture repo called this out explicitly.
+The Python port drops Kafka because the signal has been recorded (the Java source history
+and the architecture case study both document it) and the ongoing carrying cost outweighs
+the residual value.
+
+---
 
 ## Alternatives Considered
 
 | Option | Reason Not Chosen |
 |--------|-------------------|
-| Synchronous call (notes-api calls the classifier inline) | Couples the services; note creation becomes as slow/fragile as the classifier and fails when it's down — defeats the purpose of an async seam |
-| `@TransactionalEventListener(AFTER_COMMIT)` | Cleaner (never publishes for a rolled-back tx) and idiomatic, but more wiring and still not fully atomic; deferred as a reasonable mid-point upgrade |
-| Transactional outbox | Properly solves the dual-write problem but needs an outbox table + relay/CDC; over-scoped for Phase 0 — recorded above as the production upgrade path |
-| Spring Cloud Stream (binder abstraction) | Hides the Kafka mechanics being deliberately relearned (offsets, keys, delivery) |
-| Avro + Schema Registry | Stronger schema guarantees but needs registry infrastructure; JSON is simpler, human-readable, and grader-friendly (consistent with `system/SYS-003`). Avro is the scale-up |
+| Keep Kafka, rewrite consumer in Python | Same infrastructure cost; adds a kafka-python dependency to the classifier that isn't used for anything else in the portfolio |
+| Synchronous inline call | Couples the services; note creation becomes as slow/fragile as the classifier and fails when it's down |
+| Celery / Redis task queue | Adds a broker (Redis) — same class of problem as Kafka for this scale |
+| BackgroundTasks (chosen) | No broker, same-process, zero infrastructure; fits the single-user local context |
