@@ -1,39 +1,14 @@
-import os
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.orm import Session
 
 from .database import get_db
 from .schemas import NoteRequest, NoteResponse, TagsRequest
 from .service import NoteService
+from .tasks import classify_and_writeback
 
 router = APIRouter(prefix="/notes", tags=["notes"])
-
-CLASSIFIER_URL = os.getenv("CLASSIFIER_URL", "")
-
-
-def _classify_and_writeback(note_id: int, content: str, db: Session) -> None:
-    """Fire-and-forget: enrich note tags from the classifier. Errors are silenced."""
-    if not CLASSIFIER_URL:
-        return
-    try:
-        resp = httpx.post(
-            f"{CLASSIFIER_URL}/classify", json={"text": content}, timeout=10.0
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        new_tags = [
-            t for t in [result.get("category"), result.get("operational_domain")] if t
-        ]
-        if new_tags:
-            service = NoteService(db)
-            note = service.get_by_id(note_id)
-            merged = list(set(note.tags) | set(new_tags))
-            service.set_tags(note_id, TagsRequest(tags=merged))
-    except Exception:
-        pass
 
 
 @router.get("", response_model=list[NoteResponse])
@@ -57,7 +32,10 @@ def create_note(
     db: Session = Depends(get_db),
 ) -> NoteResponse:
     note = NoteService(db).create(req)
-    background_tasks.add_task(_classify_and_writeback, note.id, note.content, db)
+    # Fire-and-forget enrichment (SYS-005). No-op unless CLASSIFIER_URL is set.
+    background_tasks.add_task(
+        classify_and_writeback, note.id, f"{note.title}\n{note.content}"
+    )
     return note  # type: ignore[return-value]
 
 

@@ -25,6 +25,12 @@ def _reset_db() -> None:
 
 
 @pytest.fixture
+def session_factory():
+    """The test session factory, for patching the background task's SessionLocal."""
+    return _Session
+
+
+@pytest.fixture
 def db():
     session = _Session()
     try:
