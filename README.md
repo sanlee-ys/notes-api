@@ -2,114 +2,95 @@
 
 ![CI](https://github.com/sanlee-ys/notes-api/actions/workflows/ci.yml/badge.svg)
 
-A small, well-commented **Notes REST API** built with **Spring Boot 4** — a learning
-project for getting back into Java by building something real rather than toy snippets.
-It demonstrates the classic layered architecture (controller → service → repository →
-entity), DTO-based request/response contracts, bean validation, and centralized error
-handling.
+A personal **Notes REST API** built with **Python / FastAPI**. It stores notes with
+optional tags, supports full-text search, and has an optional background enrichment
+seam: after a note is saved, it calls the `defense-news-classifier` service and
+writes the predicted `category` and `operational_domain` tags back to the note.
+
+Previously written in Java/Spring Boot as a "get back into Java" exercise. Ported
+to Python to match the rest of the portfolio stack and reduce cognitive load. The
+Java history and learning notes are preserved in `learning-notes/` as a reference;
+`decisions/ADR-001` documents the architectural trade-off.
 
 ## Tech stack
 
-- **Java 21** (bytecode target; builds fine on newer JDKs)
-- **Spring Boot 4.1** — Web MVC, Data JPA, Validation
-- **Hibernate** ORM with **H2** (in-memory, default) or **PostgreSQL** (the `postgres` profile)
-- **Flyway** schema migrations on the Postgres profile
-- **Maven** (via the bundled Maven Wrapper — no global Maven install needed)
+- **Python 3.11+**
+- **FastAPI** — HTTP layer, dependency injection, BackgroundTasks
+- **SQLAlchemy 2.x** — ORM; `notes` + `note_tags` tables
+- **SQLite** (default, file `notes.db`) or **PostgreSQL** (set `DATABASE_URL`)
+- **Pydantic v2** — request/response validation
+- **uv** — dependency management (`pyproject.toml` + `uv.lock`)
 
 ## Architecture
 
-A request flows straight down the layers and back:
-
 ```
-HTTP ─▶ NoteController ─▶ NoteService ─▶ NoteRepository ─▶ H2 (notes table)
-         (DTOs in/out)    (business logic)  (Spring Data)
+HTTP → router.py → service.py → models.py → SQLite / PostgreSQL
+                 ↘ BackgroundTasks → classifier (CLASSIFIER_URL, optional)
 ```
 
-- **`NoteController`** — REST endpoints; speaks `NoteRequest`/`NoteResponse` DTOs only.
-- **`NoteService`** — business rules (404 on missing, transactional read-modify-write).
-- **`NoteRepository`** — an empty interface; Spring Data generates the implementation.
-- **`Note`** — the JPA entity mapped to the `notes` table.
-- **`GlobalExceptionHandler`** — turns validation failures into clean `400` field-error maps.
+- **`router.py`** — FastAPI router on `/notes`; wires up BackgroundTasks after POST
+- **`service.py`** — business logic; raises `HTTPException` on 404/conflict
+- **`models.py`** — `Note` + `NoteTag` ORM entities; `tags` exposed as a list property
+- **`schemas.py`** — Pydantic `NoteRequest`, `TagsRequest`, `NoteResponse`
+- **`database.py`** — engine + session factory; `DATABASE_URL` env var
 
 ## Running it
 
-You need a JDK 17+ on `JAVA_HOME`. Then, from the project root:
-
 ```bash
-./mvnw spring-boot:run          # macOS/Linux
-.\mvnw.cmd spring-boot:run      # Windows PowerShell
+uv sync                                          # install deps
+uvicorn notes_api.main:app --port 8081           # start the server
 ```
 
-The API comes up at `http://localhost:8081` (8081 rather than 8080 so it doesn't
-collide with kafka-ui on the host's 8080). This default uses an in-memory H2
-database, so data resets on each restart.
-
-### Running against PostgreSQL
-
-With a Postgres reachable at `localhost:5432` and a `notesdb` database, activate
-the `postgres` profile — Flyway creates the schema and data persists across restarts:
+The API comes up at `http://localhost:8081`. Data persists to `notes.db` in the
+working directory. Set `DATABASE_URL` for PostgreSQL:
 
 ```bash
-SPRING_PROFILES_ACTIVE=postgres ./mvnw spring-boot:run        # macOS/Linux
-$env:SPRING_PROFILES_ACTIVE='postgres'; .\mvnw.cmd spring-boot:run   # Windows PowerShell
+DATABASE_URL=postgresql://user:pass@localhost/notesdb \
+  uvicorn notes_api.main:app --port 8081
 ```
 
-Set `POSTGRES_PASSWORD` for the DB password (defaults to `postgres` for local dev).
-See [docs/08](docs/08-postgres-and-flyway.md) for the full walkthrough.
+Set `CLASSIFIER_URL` to enable automatic tag enrichment after note creation:
+
+```bash
+CLASSIFIER_URL=http://localhost:8000 \
+  uvicorn notes_api.main:app --port 8081
+```
+
+If `CLASSIFIER_URL` is unset (the default), classification is skipped — note
+creation still works normally.
 
 ## API
 
-| Method | Path          | Body            | Success | Notes                         |
-|--------|---------------|-----------------|---------|-------------------------------|
-| GET    | `/notes`      | —               | 200     | List notes; optional `?q=` text & `?tag=` filters |
-| GET    | `/notes/{id}` | —               | 200     | 404 if not found              |
-| POST   | `/notes`      | `NoteRequest`   | 201     | 400 if title/content blank    |
-| PUT    | `/notes/{id}` | `NoteRequest`   | 200     | 404 if not found, 400 if invalid |
-| PUT    | `/notes/{id}/tags` | `TagsRequest` | 200 | Replace just the tags (idempotent writeback seam, `system/SYS-005`); 404 if not found |
-| DELETE | `/notes/{id}` | —               | 204     | 404 if not found              |
+| Method | Path               | Body           | Status | Notes                                            |
+|--------|--------------------|----------------|--------|--------------------------------------------------|
+| GET    | `/notes`           | —              | 200    | List notes; optional `?q=` text & `?tag=` filter |
+| GET    | `/notes/{id}`      | —              | 200    | 404 if not found                                 |
+| POST   | `/notes`           | `NoteRequest`  | 201    | 400/422 if title/content blank or invalid        |
+| PUT    | `/notes/{id}`      | `NoteRequest`  | 200    | 404 if not found                                 |
+| PUT    | `/notes/{id}/tags` | `TagsRequest`  | 200    | Replace tags (idempotent writeback; `SYS-005`)   |
+| DELETE | `/notes/{id}`      | —              | 204    | 404 if not found                                 |
 
-`NoteRequest` is `{ "title": "...", "content": "...", "tags": ["..."] }` (tags
-optional). The server controls `id`, `createdAt`, and `updatedAt` — clients
-cannot set them.
+`NoteRequest`: `{ "title": "...", "content": "...", "tags": ["..."] }` — `tags` is
+optional. The server controls `id`, `created_at`, `updated_at`.
 
 ### Example
 
 ```bash
 curl -s -X POST http://localhost:8081/notes \
   -H "Content-Type: application/json" \
-  -d '{"title":"Buy milk","content":"2% and oat"}'
-# -> 201 {"id":1,"title":"Buy milk","content":"2% and oat","createdAt":"...","updatedAt":"..."}
+  -d '{"title":"Cyber budget hearing","content":"Senate Armed Services Committee approved..."}'
+# → 201 {"id":1,"title":"...","content":"...","tags":[],"created_at":"...","updated_at":"..."}
 ```
 
-A bad request returns the offending fields:
+## Testing
 
 ```bash
-curl -s -X POST http://localhost:8081/notes \
-  -H "Content-Type: application/json" -d '{"title":"","content":""}'
-# -> 400 {"title":"title must not be blank","content":"content must not be blank"}
+uv sync --group dev
+uv run pytest                         # run tests (in-memory SQLite, no API key needed)
+uv run pytest --cov=notes_api         # with coverage
+uv run ruff check src/ tests/         # lint
+uv run black --check src/ tests/      # format check
+uv run mypy src/                      # type check
 ```
 
-## Learning notes
-
-This repo is a learning project, so it ships with plain-language concept notes in
-[`docs/`](docs/README.md):
-
-- [Why it's structured this way](docs/01-architecture.md) — the layers and a request's journey
-- [Controllers](docs/02-controllers.md) — the HTTP layer and its annotations
-- [DTOs](docs/03-dtos.md) — what a DTO is and why it's separate from the entity
-- [pom.xml & Maven](docs/04-pom-and-maven.md) — the build file, section by section
-- [Tags & JPA collections](docs/05-tags-and-collections.md) — `@ElementCollection`, `Set` vs `List`, collection validation
-- [Search & queries](docs/06-search-and-queries.md) — derived queries vs `@Query`, JPQL, optional filters
-- [Testing](docs/07-testing.md) — the test pyramid: Mockito, `@DataJpaTest`, `@WebMvcTest` + `MockMvc`
-- [PostgreSQL & Flyway](docs/08-postgres-and-flyway.md) — profiles, external config, schema migrations
-- [Test coverage](docs/09-coverage.md) — JaCoCo, line vs. branch, coverage as a guide
-
-## Status
-
-Working CRUD with validation, tags, and search; an event-driven seam that publishes
-`NoteCreated` and an idempotent `PUT /notes/{id}/tags` writeback (the classifier
-consumes the events and writes labels back — `system/SYS-005`); a 23-test suite
-(`./mvnw test`) with line/branch coverage measured by JaCoCo in CI, plus a
-Testcontainers integration test (`./mvnw verify`, needs Docker) that asserts a real
-`NoteCreated` lands on the topic; and an optional PostgreSQL profile with Flyway
-migrations for durable storage.
+Tests run fully offline — no `CLASSIFIER_URL` or `DATABASE_URL` needed.
