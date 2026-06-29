@@ -63,15 +63,18 @@ creation still works normally.
 
 | Method | Path               | Body           | Status | Notes                                            |
 |--------|--------------------|----------------|--------|--------------------------------------------------|
-| GET    | `/notes`           | —              | 200    | List notes; optional `?q=` text & `?tag=` filter |
+| GET    | `/notes`           | —              | 200    | List notes; optional `?q=` text, `?tag=`, and `?published_after=`/`?published_before=` (ISO date) filters |
 | GET    | `/notes/{id}`      | —              | 200    | 404 if not found                                 |
 | POST   | `/notes`           | `NoteRequest`  | 201    | 400/422 if title/content blank or invalid        |
 | PUT    | `/notes/{id}`      | `NoteRequest`  | 200    | 404 if not found                                 |
 | PUT    | `/notes/{id}/tags` | `TagsRequest`  | 200    | Replace tags (idempotent writeback; `SYS-005`)   |
 | DELETE | `/notes/{id}`      | —              | 204    | 404 if not found                                 |
 
-`NoteRequest`: `{ "title": "...", "content": "...", "tags": ["..."] }` — `tags` is
-optional. The server controls `id`, `created_at`, `updated_at`.
+`NoteRequest`: `{ "title": "...", "content": "...", "tags": ["..."], "published_at": "2014-03-15" }`
+— `tags` and `published_at` are optional. `published_at` is the article's own
+publication date (ISO 8601), distinct from the server-controlled `created_at`
+(when the note was saved); it's what makes the date-range filters meaningful.
+The server controls `id`, `created_at`, `updated_at`, and `enrichment_status`.
 
 ### Example
 

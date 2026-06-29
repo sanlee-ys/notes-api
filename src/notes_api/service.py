@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import HTTPException
@@ -12,7 +13,13 @@ class NoteService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def get_all(self, q: Optional[str] = None, tag: Optional[str] = None) -> list[Note]:
+    def get_all(
+        self,
+        q: Optional[str] = None,
+        tag: Optional[str] = None,
+        published_after: Optional[datetime] = None,
+        published_before: Optional[datetime] = None,
+    ) -> list[Note]:
         query = self.db.query(Note)
         if q:
             q_lower = q.lower()
@@ -24,6 +31,14 @@ class NoteService:
             )
         if tag:
             query = query.join(Note._tags).filter(NoteTag.tag == tag)
+        # Date-range filters operate on the article's publication date. Notes with
+        # a NULL published_at are excluded from a bounded range (NULL comparisons
+        # are never true), which is the intended behavior: an undated note isn't
+        # "from 2014."
+        if published_after is not None:
+            query = query.filter(Note.published_at >= published_after)
+        if published_before is not None:
+            query = query.filter(Note.published_at <= published_before)
         return query.all()
 
     def get_by_id(self, note_id: int) -> Note:
@@ -33,7 +48,7 @@ class NoteService:
         return note
 
     def create(self, req: NoteRequest) -> Note:
-        note = Note(title=req.title, content=req.content)
+        note = Note(title=req.title, content=req.content, published_at=req.published_at)
         note.tags = req.tags
         self.db.add(note)
         self.db.commit()
@@ -44,6 +59,7 @@ class NoteService:
         note = self.get_by_id(note_id)
         note.title = req.title
         note.content = req.content
+        note.published_at = req.published_at
         note.tags = req.tags
         self.db.commit()
         self.db.refresh(note)

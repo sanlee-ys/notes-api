@@ -116,6 +116,80 @@ class TestSearch:
         assert client.get("/notes?q=xyz_nonexistent").json() == []
 
 
+# --- PUBLISHED_AT ---
+
+
+class TestPublishedAt:
+    def test_defaults_to_null(self, client):
+        note = _create(client)
+        assert note["published_at"] is None
+
+    def test_round_trips_on_create(self, client):
+        resp = client.post(
+            "/notes",
+            json={
+                "title": "F-35 award",
+                "content": "Contract signed.",
+                "published_at": "2014-03-15T00:00:00",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["published_at"] == "2014-03-15T00:00:00"
+
+    def test_accepts_date_only_string(self, client):
+        resp = client.post(
+            "/notes",
+            json={"title": "t", "content": "c", "published_at": "2014-03-15"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["published_at"].startswith("2014-03-15")
+
+    def test_update_sets_published_at(self, client):
+        note = _create(client)
+        resp = client.put(
+            f"/notes/{note['id']}",
+            json={"title": "T", "content": "C", "published_at": "2020-01-01T00:00:00"},
+        )
+        assert resp.json()["published_at"] == "2020-01-01T00:00:00"
+
+
+class TestPublishedAtFilter:
+    def _seed_dated(self, client, title, date):
+        client.post(
+            "/notes", json={"title": title, "content": "c", "published_at": date}
+        )
+
+    def test_filters_to_a_year_range(self, client):
+        self._seed_dated(client, "Old", "2013-12-31")
+        self._seed_dated(client, "InRange", "2014-06-01")
+        self._seed_dated(client, "New", "2015-01-01")
+        results = client.get(
+            "/notes?published_after=2014-01-01&published_before=2014-12-31"
+        ).json()
+        titles = {r["title"] for r in results}
+        assert titles == {"InRange"}
+
+    def test_undated_notes_excluded_from_range(self, client):
+        _create(client, title="Undated")  # no published_at
+        self._seed_dated(client, "Dated", "2014-06-01")
+        results = client.get("/notes?published_after=2014-01-01").json()
+        assert {r["title"] for r in results} == {"Dated"}
+
+    def test_range_composes_with_tag(self, client):
+        client.post(
+            "/notes",
+            json={
+                "title": "Tagged2014",
+                "content": "c",
+                "tags": ["cyber"],
+                "published_at": "2014-06-01",
+            },
+        )
+        self._seed_dated(client, "Untagged2014", "2014-07-01")
+        results = client.get("/notes?tag=cyber&published_after=2014-01-01").json()
+        assert {r["title"] for r in results} == {"Tagged2014"}
+
+
 # --- UPDATE ---
 
 
