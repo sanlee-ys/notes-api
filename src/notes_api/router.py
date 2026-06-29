@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
@@ -15,9 +16,16 @@ router = APIRouter(prefix="/notes", tags=["notes"])
 def list_notes(
     q: Optional[str] = None,
     tag: Optional[str] = None,
+    published_after: Optional[datetime] = None,
+    published_before: Optional[datetime] = None,
     db: Session = Depends(get_db),
 ) -> list[NoteResponse]:
-    return NoteService(db).get_all(q=q, tag=tag)  # type: ignore[return-value]
+    return NoteService(db).get_all(  # type: ignore[return-value]
+        q=q,
+        tag=tag,
+        published_after=published_after,
+        published_before=published_before,
+    )
 
 
 @router.get("/{note_id}", response_model=NoteResponse)

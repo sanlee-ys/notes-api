@@ -72,7 +72,7 @@ class TestMergeTags:
 
 
 class TestClassifyAndWriteback:
-    def test_writes_namespaced_tags_end_to_end(self, monkeypatch, session_factory):
+    def test_writes_namespaced_tags_and_sets_done(self, monkeypatch, session_factory):
         # Seed a note with a user tag.
         seed = session_factory()
         note = Note(title="Budget", content="Senate approves cyber budget")
@@ -83,7 +83,6 @@ class TestClassifyAndWriteback:
         note_id = note.id
         seed.close()
 
-        # Patch the classifier HTTP call and the task's session factory.
         monkeypatch.setattr(
             tasks.httpx,
             "post",
@@ -98,9 +97,9 @@ class TestClassifyAndWriteback:
 
         check = session_factory()
         refreshed = check.query(Note).filter(Note.id == note_id).first()
-        result = set(refreshed.tags)
         check.close()
-        assert result == {"mine", "category:procurement", "domain:cyber"}
+        assert set(refreshed.tags) == {"mine", "category:procurement", "domain:cyber"}
+        assert refreshed.enrichment_status == "done"
 
     def test_noop_when_classifier_url_unset(self, monkeypatch):
         monkeypatch.delenv("CLASSIFIER_URL", raising=False)
@@ -112,7 +111,27 @@ class TestClassifyAndWriteback:
         # Must return cleanly without touching the classifier or the DB.
         tasks.classify_and_writeback(999, "some text")
 
-    def test_swallows_classifier_failure(self, monkeypatch, session_factory):
+    def test_noop_leaves_status_pending(self, monkeypatch, session_factory):
+        """When CLASSIFIER_URL is unset, enrichment_status stays pending."""
+        seed = session_factory()
+        note = Note(title="t", content="c")
+        note.tags = []
+        seed.add(note)
+        seed.commit()
+        seed.refresh(note)
+        note_id = note.id
+        seed.close()
+
+        monkeypatch.delenv("CLASSIFIER_URL", raising=False)
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+        tasks.classify_and_writeback(note_id, "c")
+
+        check = session_factory()
+        refreshed = check.query(Note).filter(Note.id == note_id).first()
+        check.close()
+        assert refreshed.enrichment_status == "pending"
+
+    def test_classifier_failure_sets_failed_status(self, monkeypatch, session_factory):
         seed = session_factory()
         note = Note(title="t", content="c")
         note.tags = ["keep"]
@@ -134,6 +153,6 @@ class TestClassifyAndWriteback:
 
         check = session_factory()
         refreshed = check.query(Note).filter(Note.id == note_id).first()
-        result = list(refreshed.tags)
         check.close()
-        assert result == ["keep"]
+        assert list(refreshed.tags) == ["keep"]
+        assert refreshed.enrichment_status == "failed"

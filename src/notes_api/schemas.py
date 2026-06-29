@@ -7,6 +7,11 @@ class NoteRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     content: str = Field(..., min_length=1, max_length=10000)
     tags: list[str] = Field(default_factory=list)
+    published_at: datetime | None = Field(
+        default=None,
+        description="The article's publication date (ISO 8601). Omit for notes "
+        "with no inherent date.",
+    )
 
     @field_validator("tags")
     @classmethod
@@ -38,6 +43,8 @@ class NoteResponse(BaseModel):
     title: str
     content: str
     tags: list[str]
+    enrichment_status: str
+    published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
