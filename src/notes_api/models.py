@@ -21,6 +21,12 @@ class Note(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+    # Tracks whether the async classifier enrichment task has run.
+    # pending → done (classifier wrote tags back) or failed (classifier error).
+    # When CLASSIFIER_URL is unset (dev/test), this stays "pending" indefinitely.
+    enrichment_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending"
+    )
     _tags: Mapped[list[NoteTag]] = relationship(
         "NoteTag", back_populates="note", cascade="all, delete-orphan", lazy="joined"
     )

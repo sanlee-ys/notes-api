@@ -38,6 +38,7 @@ class NoteResponse(BaseModel):
     title: str
     content: str
     tags: list[str]
+    enrichment_status: str
     created_at: datetime
     updated_at: datetime
 

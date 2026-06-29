@@ -19,6 +19,7 @@ class TestCreate:
         assert body["title"] == "My Note"
         assert body["content"] == "Hello"
         assert body["tags"] == []
+        assert body["enrichment_status"] == "pending"
         assert "id" in body
         assert "created_at" in body
         assert "updated_at" in body
