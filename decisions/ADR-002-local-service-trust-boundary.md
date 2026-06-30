@@ -27,9 +27,11 @@ in the first place.
 Harden by **shrinking the attack surface and documenting the trust boundary**, rather than
 adding authentication:
 
-- **Bind to loopback by default.** `HOST=127.0.0.1` via environment variable — running
-  the app no longer exposes it on the network. A deliberate, separately-secured deployment
-  can set `HOST=0.0.0.0`, but the safe default requires no thought.
+- **Bind to loopback by default.** The app reads no `HOST` variable itself; the binding
+  is controlled by uvicorn's `--host` flag, which the README's run commands set to
+  `${HOST:-127.0.0.1}` — running the app the documented way no longer exposes it on the
+  network. A deliberate, separately-secured deployment can set `HOST=0.0.0.0` (or pass
+  `--host 0.0.0.0` directly), but the safe default requires no thought.
   ```bash
   uvicorn notes_api.main:app --host ${HOST:-127.0.0.1} --port 8081
   ```

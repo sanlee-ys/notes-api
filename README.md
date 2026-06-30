@@ -37,23 +37,25 @@ HTTP → router.py → service.py → models.py → SQLite / PostgreSQL
 ## Running it
 
 ```bash
-uv sync                                          # install deps
-uvicorn notes_api.main:app --port 8081           # start the server
+uv sync                                                       # install deps
+uvicorn notes_api.main:app --host ${HOST:-127.0.0.1} --port 8081   # start the server
 ```
 
-The API comes up at `http://localhost:8081`. Data persists to `notes.db` in the
-working directory. Set `DATABASE_URL` for PostgreSQL:
+The API comes up at `http://localhost:8081`, bound to loopback by default
+(`decisions/ADR-002`) — set `HOST=0.0.0.0` only for a deliberate, separately-secured
+deployment. Data persists to `notes.db` in the working directory. Set `DATABASE_URL`
+for PostgreSQL:
 
 ```bash
 DATABASE_URL=postgresql://user:pass@localhost/notesdb \
-  uvicorn notes_api.main:app --port 8081
+  uvicorn notes_api.main:app --host ${HOST:-127.0.0.1} --port 8081
 ```
 
 Set `CLASSIFIER_URL` to enable automatic tag enrichment after note creation:
 
 ```bash
 CLASSIFIER_URL=http://localhost:8000 \
-  uvicorn notes_api.main:app --port 8081
+  uvicorn notes_api.main:app --host ${HOST:-127.0.0.1} --port 8081
 ```
 
 If `CLASSIFIER_URL` is unset (the default), classification is skipped — note
