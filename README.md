@@ -3,14 +3,14 @@
 ![CI](https://github.com/sanlee-ys/notes-api/actions/workflows/ci.yml/badge.svg)
 
 A personal **Notes REST API** built with **Python / FastAPI**. It stores notes with
-optional tags, supports full-text search, and has an optional background enrichment
+optional tags, supports case-insensitive substring search, and has an optional background enrichment
 seam: after a note is saved, it calls the `defense-news-classifier` service and
 writes the predicted `category` and `operational_domain` tags back to the note.
 
 Previously written in Java/Spring Boot as a "get back into Java" exercise. Ported
 to Python to match the rest of the portfolio stack and reduce cognitive load. The
-Java history and learning notes are preserved in `learning-notes/` as a reference;
-`decisions/ADR-001` documents the architectural trade-off.
+Java history lives in this repo's git history; `decisions/ADR-001` documents the
+architectural trade-off.
 
 ## Tech stack
 
@@ -82,7 +82,7 @@ The server controls `id`, `created_at`, `updated_at`, and `enrichment_status`.
 curl -s -X POST http://localhost:8081/notes \
   -H "Content-Type: application/json" \
   -d '{"title":"Cyber budget hearing","content":"Senate Armed Services Committee approved..."}'
-# → 201 {"id":1,"title":"...","content":"...","tags":[],"created_at":"...","updated_at":"..."}
+# → 201 {"id":1,"title":"...","content":"...","tags":[],"enrichment_status":"pending","published_at":null,"created_at":"...","updated_at":"..."}
 ```
 
 ## Testing
