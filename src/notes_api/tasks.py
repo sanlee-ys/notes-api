@@ -13,6 +13,7 @@ When CLASSIFIER_URL is unset (dev/test), the task is a no-op and status stays
 "pending" — that signals "not configured" rather than "failed."
 """
 
+import logging
 import os
 
 import httpx
@@ -20,6 +21,8 @@ import httpx
 from .database import SessionLocal
 from .models import Note
 from .service import NoteService
+
+logger = logging.getLogger(__name__)
 
 # Classifier-owned tags are namespaced so the writeback can replace only its own
 # prior tags on reprocessing, never a user's hand-applied tags (SYS-005).
@@ -64,7 +67,9 @@ def _write_enrichment_status(note_id: int, status: str) -> None:
             note.enrichment_status = status
             db.commit()
     except Exception:
-        pass
+        logger.exception(
+            "failed to persist enrichment_status=%s for note %s", status, note_id
+        )
     finally:
         db.close()
 
@@ -88,11 +93,13 @@ def classify_and_writeback(note_id: int, text: str) -> None:
         resp.raise_for_status()
         result = resp.json()
     except Exception:
+        logger.exception("classifier request failed for note %s", note_id)
         _write_enrichment_status(note_id, "failed")
         return
 
     new_tags = classifier_tags(result)
     if not new_tags:
+        logger.warning("classifier returned no tags for note %s: %r", note_id, result)
         _write_enrichment_status(note_id, "failed")
         return
 
@@ -105,7 +112,11 @@ def classify_and_writeback(note_id: int, text: str) -> None:
         note.tags = merged
         note.enrichment_status = "done"
         db.commit()
+        logger.info("note %s classified; tags written back: %s", note_id, new_tags)
     except Exception:
-        pass  # Note deleted before writeback — not a failure we can surface.
+        logger.warning(
+            "writeback skipped for note %s (likely deleted before writeback)",
+            note_id,
+        )
     finally:
         db.close()
