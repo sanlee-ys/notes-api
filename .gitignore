@@ -20,3 +20,5 @@ notes.db
 *.iml
 *.ipr
 *.iws
+
+graphify-out/
