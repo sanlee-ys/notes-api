@@ -186,8 +186,10 @@ class TestClassifyAndWriteback:
 
 
 class TestClassifyAndWritebackRetry:
-    """SYS-013: retry transient classifier failures with backoff, fail fast
-    on anything that retrying the same request body can't fix."""
+    """SYS-013: retry transient classifier failures with backoff.
+
+    Fails fast on anything that retrying the same request body can't fix.
+    """
 
     def test_retries_transient_errors_then_succeeds(self, monkeypatch, session_factory):
         seed = session_factory()

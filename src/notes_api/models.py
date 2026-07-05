@@ -1,3 +1,11 @@
+"""SQLAlchemy ORM models: notes and their tags.
+
+Tags live in a child table (one row per tag) rather than a delimited string
+column, so tag filtering is a real SQL join instead of substring matching.
+The ``Note.tags`` property hides that shape: callers read and write plain
+``list[str]`` and the relationship bookkeeping stays in this module.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -9,6 +17,8 @@ from .database import Base
 
 
 class Note(Base):
+    """A stored note, with its tags and async-enrichment bookkeeping."""
+
     __tablename__ = "notes"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -37,14 +47,18 @@ class Note(Base):
 
     @property
     def tags(self) -> list[str]:
+        """Return this note's tags as a plain list of strings."""
         return [t.tag for t in self._tags]
 
     @tags.setter
     def tags(self, tag_list: list[str]) -> None:
+        """Replace all tags with a fresh set of NoteTag rows."""
         self._tags = [NoteTag(tag=t) for t in tag_list]
 
 
 class NoteTag(Base):
+    """One tag on one note; rows are cascade-deleted with their note."""
+
     __tablename__ = "note_tags"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
