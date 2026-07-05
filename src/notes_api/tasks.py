@@ -11,10 +11,18 @@ Enrichment status lifecycle:
 
 When CLASSIFIER_URL is unset (dev/test), the task is a no-op and status stays
 "pending" — that signals "not configured" rather than "failed."
+
+Per SYS-013 (self-healing by default), the classifier call retries transient
+failures (connection errors, timeouts, 5xx) with backoff — a 4xx or any other
+error shape is not retried, since the same request body would just fail again.
+Exhausting retries (or any non-retryable failure) logs a WARNING with the note
+id and attempt count, so a fault that keeps recurring is grep-able rather than
+silently masked.
 """
 
 import logging
 import os
+import time
 
 import httpx
 
@@ -28,6 +36,11 @@ logger = logging.getLogger(__name__)
 # prior tags on reprocessing, never a user's hand-applied tags (SYS-005).
 CLASSIFIER_PREFIXES = ("category:", "domain:")
 TAG_CAP = 20
+
+MAX_ATTEMPTS = 3
+# Backoff after attempt 1 and attempt 2 respectively; matches the schedule in
+# learning-notes' retry-with-backoff writeup.
+RETRY_BACKOFF_SECONDS = (2, 4)
 
 
 def classifier_tags(result: dict[str, str]) -> list[str]:
@@ -77,23 +90,51 @@ def _write_enrichment_status(note_id: int, status: str) -> None:
 def classify_and_writeback(note_id: int, text: str) -> None:
     """Classify ``text`` and write the labels back to note ``note_id``.
 
-    No-op when ``CLASSIFIER_URL`` is unset (the default in dev/tests). On
-    classifier failure, writes ``enrichment_status="failed"`` to the note so
-    callers can see the enrichment didn't land. On success, writes the classifier
-    tags back and sets ``enrichment_status="done"``.
+    No-op when ``CLASSIFIER_URL`` is unset (the default in dev/tests). Retries
+    connection errors, timeouts, and 5xx responses up to MAX_ATTEMPTS times with
+    backoff; a 4xx or any other error shape fails immediately since retrying the
+    same body won't help. On exhaustion (or any non-retryable failure), writes
+    ``enrichment_status="failed"`` and logs a WARNING so callers can see the
+    enrichment didn't land. On success, writes the classifier tags back and sets
+    ``enrichment_status="done"``.
     """
     classifier_url = os.getenv("CLASSIFIER_URL", "")
     if not classifier_url:
         return  # Not configured — leave status as "pending" (not a failure).
 
-    try:
-        resp = httpx.post(
-            f"{classifier_url}/classify", json={"text": text}, timeout=10.0
+    result: dict[str, str] | None = None
+    last_exc: Exception | None = None
+    attempts_made = 0
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        attempts_made = attempt
+        try:
+            resp = httpx.post(
+                f"{classifier_url}/classify", json={"text": text}, timeout=10.0
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            break
+        except httpx.HTTPStatusError as exc:
+            last_exc = exc
+            if exc.response.status_code < 500:
+                break  # client error — retrying the same body won't help
+        except httpx.HTTPError as exc:
+            last_exc = exc
+        except Exception as exc:
+            last_exc = exc
+            break  # unexpected error shape — don't retry blindly
+
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(RETRY_BACKOFF_SECONDS[attempt - 1])
+
+    if result is None:
+        logger.warning(
+            "classifier request failed for note %s after %d attempt(s): %r",
+            note_id,
+            attempts_made,
+            last_exc,
         )
-        resp.raise_for_status()
-        result = resp.json()
-    except Exception:
-        logger.exception("classifier request failed for note %s", note_id)
         _write_enrichment_status(note_id, "failed")
         return
 

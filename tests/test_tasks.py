@@ -1,5 +1,9 @@
 """Unit tests for the SYS-005 classify-and-writeback enrichment logic."""
 
+import logging
+
+import httpx
+
 from notes_api import tasks
 from notes_api.models import Note
 from notes_api.tasks import classifier_tags, merge_tags
@@ -14,6 +18,16 @@ class _FakeResponse:
 
     def json(self):
         return self._payload
+
+
+class _FakeErrorResponse:
+    """Mimics an httpx.Response whose raise_for_status() raises for status_code."""
+
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+    def raise_for_status(self) -> None:
+        raise httpx.HTTPStatusError("error", request=None, response=self)
 
 
 class TestClassifierTags:
@@ -83,18 +97,25 @@ class TestClassifyAndWriteback:
         note_id = note.id
         seed.close()
 
-        monkeypatch.setattr(
-            tasks.httpx,
-            "post",
-            lambda *a, **k: _FakeResponse(
+        calls = []
+        sleeps = []
+
+        def _post(*a, **k):
+            calls.append(1)
+            return _FakeResponse(
                 {"category": "procurement", "operational_domain": "cyber"}
-            ),
-        )
+            )
+
+        monkeypatch.setattr(tasks.httpx, "post", _post)
+        monkeypatch.setattr(tasks.time, "sleep", lambda seconds: sleeps.append(seconds))
         monkeypatch.setattr(tasks, "SessionLocal", session_factory)
         monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
 
         tasks.classify_and_writeback(note_id, "Senate approves cyber budget")
 
+        # A first-attempt success should never retry or back off.
+        assert len(calls) == 1
+        assert sleeps == []
         check = session_factory()
         refreshed = check.query(Note).filter(Note.id == note_id).first()
         check.close()
@@ -141,7 +162,10 @@ class TestClassifyAndWriteback:
         note_id = note.id
         seed.close()
 
+        calls = []
+
         def _raise(*a, **k):
+            calls.append(1)
             raise RuntimeError("classifier down")
 
         monkeypatch.setattr(tasks.httpx, "post", _raise)
@@ -151,8 +175,116 @@ class TestClassifyAndWriteback:
         # Should not raise; the note keeps its original tags.
         tasks.classify_and_writeback(note_id, "c")
 
+        # A non-httpx exception (e.g. malformed JSON) isn't a network-retry
+        # case — fails fast rather than burning the retry budget.
+        assert len(calls) == 1
         check = session_factory()
         refreshed = check.query(Note).filter(Note.id == note_id).first()
         check.close()
         assert list(refreshed.tags) == ["keep"]
+        assert refreshed.enrichment_status == "failed"
+
+
+class TestClassifyAndWritebackRetry:
+    """SYS-013: retry transient classifier failures with backoff, fail fast
+    on anything that retrying the same request body can't fix."""
+
+    def test_retries_transient_errors_then_succeeds(self, monkeypatch, session_factory):
+        seed = session_factory()
+        note = Note(title="t", content="c")
+        note.tags = []
+        seed.add(note)
+        seed.commit()
+        seed.refresh(note)
+        note_id = note.id
+        seed.close()
+
+        calls = []
+
+        def _flaky(*a, **k):
+            calls.append(1)
+            if len(calls) < 3:
+                raise httpx.ConnectError("connection refused")
+            return _FakeResponse({"category": "policy", "operational_domain": "cyber"})
+
+        monkeypatch.setattr(tasks.httpx, "post", _flaky)
+        monkeypatch.setattr(tasks.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+        monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
+
+        tasks.classify_and_writeback(note_id, "c")
+
+        assert len(calls) == 3  # failed twice, succeeded on the 3rd attempt
+        check = session_factory()
+        refreshed = check.query(Note).filter(Note.id == note_id).first()
+        check.close()
+        assert refreshed.enrichment_status == "done"
+        assert set(refreshed.tags) == {"category:policy", "domain:cyber"}
+
+    def test_exhausts_retries_on_persistent_5xx_and_logs_warning(
+        self, monkeypatch, session_factory, caplog
+    ):
+        seed = session_factory()
+        note = Note(title="t", content="c")
+        note.tags = ["keep"]
+        seed.add(note)
+        seed.commit()
+        seed.refresh(note)
+        note_id = note.id
+        seed.close()
+
+        calls = []
+
+        def _always_503(*a, **k):
+            calls.append(1)
+            return _FakeErrorResponse(503)
+
+        monkeypatch.setattr(tasks.httpx, "post", _always_503)
+        monkeypatch.setattr(tasks.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+        monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
+
+        with caplog.at_level(logging.WARNING, logger="notes_api.tasks"):
+            tasks.classify_and_writeback(note_id, "c")
+
+        # Visibility signal (SYS-013): exhaustion is grep-able by note id and
+        # names the attempt count, not just "it failed."
+        assert len(calls) == tasks.MAX_ATTEMPTS
+        assert any(
+            str(note_id) in rec.message and "3 attempt" in rec.message
+            for rec in caplog.records
+        )
+        check = session_factory()
+        refreshed = check.query(Note).filter(Note.id == note_id).first()
+        check.close()
+        assert refreshed.enrichment_status == "failed"
+        assert list(refreshed.tags) == ["keep"]
+
+    def test_client_error_does_not_retry(self, monkeypatch, session_factory):
+        seed = session_factory()
+        note = Note(title="t", content="c")
+        note.tags = []
+        seed.add(note)
+        seed.commit()
+        seed.refresh(note)
+        note_id = note.id
+        seed.close()
+
+        calls = []
+
+        def _always_422(*a, **k):
+            calls.append(1)
+            return _FakeErrorResponse(422)
+
+        monkeypatch.setattr(tasks.httpx, "post", _always_422)
+        monkeypatch.setattr(tasks.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+        monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
+
+        tasks.classify_and_writeback(note_id, "c")
+
+        assert len(calls) == 1  # a 4xx won't succeed on retry
+        check = session_factory()
+        refreshed = check.query(Note).filter(Note.id == note_id).first()
+        check.close()
         assert refreshed.enrichment_status == "failed"
