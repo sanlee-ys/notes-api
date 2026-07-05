@@ -93,3 +93,14 @@ the residual value.
 > corrected to match the shipped code. Docs follow code here, and a fresh
 > session with a direct commit is the idiomatic pattern for FastAPI
 > `BackgroundTasks` work that outlives the request's own session.
+
+> **Amendment (2026-07-05):** The Consequences section originally stated
+> "there is no retry or dead-letter queue." Per SYS-013 (self-healing by
+> default, architecture repo), the classifier call now retries transient
+> failures (connection errors, timeouts, 5xx) up to 3 attempts with backoff
+> before writing `enrichment_status="failed"` and logging a WARNING with the
+> note id and attempt count — so a recurring fault is observable rather than
+> silently masked. This doesn't add a durable, cross-crash queue: retry is
+> in-process only, so a worker crash mid-task still drops the enrichment for
+> that note. The durable-queue revisit trigger above is unchanged — retry
+> closes the "transient blip" gap, not the "worker died" one.
