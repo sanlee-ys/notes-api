@@ -28,8 +28,10 @@ broker.
 
 After `POST /notes` returns 201, the response is sent to the caller immediately. A
 background task then calls `CLASSIFIER_URL/classify`, reads the structured response,
-and patches the note's tags via the existing `set_tags` service call. If `CLASSIFIER_URL`
-is unset (the default in tests and local dev), the background task is a no-op.
+opens a **fresh `SessionLocal`** (the request's session is already closed by the time
+the task runs), mutates `note.tags` directly on that fresh session, and commits. If
+`CLASSIFIER_URL` is unset (the default in tests and local dev), the background task is
+a no-op.
 
 Errors in the classification call are swallowed — enrichment failure never surfaces to
 the caller and never rolls back note creation.
@@ -77,3 +79,17 @@ the residual value.
 | Synchronous inline call | Couples the services; note creation becomes as slow/fragile as the classifier and fails when it's down |
 | Celery / Redis task queue | Adds a broker (Redis) — same class of problem as Kafka for this scale |
 | BackgroundTasks (chosen) | No broker, same-process, zero infrastructure; fits the single-user local context |
+
+---
+
+## Amendments
+
+> **Amendment (2026-07-05):** The Decision section originally described the
+> writeback as patching tags "via the existing `set_tags` service call." That's
+> not what shipped: the background task opens a **fresh `SessionLocal`**
+> (the request's own DB session is already closed by the time the task runs),
+> mutates `note.tags` directly on the note loaded from that fresh session, and
+> commits — it does not call the `set_tags` service method. This doc has been
+> corrected to match the shipped code. Docs follow code here, and a fresh
+> session with a direct commit is the idiomatic pattern for FastAPI
+> `BackgroundTasks` work that outlives the request's own session.
