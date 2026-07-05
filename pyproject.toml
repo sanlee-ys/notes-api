@@ -31,6 +31,13 @@ packages = ["src/notes_api"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+filterwarnings = [
+    # starlette's TestClient prefers httpx2 over plain httpx and warns otherwise;
+    # this app doesn't use httpx2 anywhere else, so mute this specific message
+    # rather than take on a dependency with no functional use. Revisit if
+    # starlette ever turns the fallback into a hard error instead of a warning.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
 
 [tool.black]
 line-length = 88
