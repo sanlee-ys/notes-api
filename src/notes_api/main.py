@@ -15,3 +15,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="Notes API", version="2.0.0", lifespan=lifespan)
 app.include_router(router)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Liveness probe. Does not touch the database, so it stays cheap and fast."""
+    return {"status": "ok"}
