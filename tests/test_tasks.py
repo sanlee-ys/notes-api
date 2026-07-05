@@ -97,18 +97,25 @@ class TestClassifyAndWriteback:
         note_id = note.id
         seed.close()
 
-        monkeypatch.setattr(
-            tasks.httpx,
-            "post",
-            lambda *a, **k: _FakeResponse(
+        calls = []
+        sleeps = []
+
+        def _post(*a, **k):
+            calls.append(1)
+            return _FakeResponse(
                 {"category": "procurement", "operational_domain": "cyber"}
-            ),
-        )
+            )
+
+        monkeypatch.setattr(tasks.httpx, "post", _post)
+        monkeypatch.setattr(tasks.time, "sleep", lambda seconds: sleeps.append(seconds))
         monkeypatch.setattr(tasks, "SessionLocal", session_factory)
         monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
 
         tasks.classify_and_writeback(note_id, "Senate approves cyber budget")
 
+        # A first-attempt success should never retry or back off.
+        assert len(calls) == 1
+        assert sleeps == []
         check = session_factory()
         refreshed = check.query(Note).filter(Note.id == note_id).first()
         check.close()
