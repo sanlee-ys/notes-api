@@ -16,11 +16,15 @@ from fastapi import FastAPI
 
 from .database import Base, engine
 from .router import router
+from .telemetry import setup_tracing
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Create database tables on startup; nothing to clean up on shutdown."""
+    # Activate the tracing SDK if NOTES_API_TRACING is set; a no-op otherwise, so
+    # the enrichment task's spans stay inert unless observability is opted in.
+    setup_tracing()
     Base.metadata.create_all(bind=engine)
     yield
 

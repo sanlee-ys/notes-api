@@ -29,6 +29,7 @@ import httpx
 from .database import SessionLocal
 from .models import Note
 from .service import NoteService
+from .telemetry import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -102,62 +103,90 @@ def classify_and_writeback(note_id: int, text: str) -> None:
     if not classifier_url:
         return  # Not configured — leave status as "pending" (not a failure).
 
-    result: dict[str, str] | None = None
-    last_exc: Exception | None = None
-    attempts_made = 0
+    # One span per enrichment task, with a child span per HTTP attempt so retries
+    # of the cross-service /classify hop (SYS-004) are visible. A no-op unless
+    # NOTES_API_TRACING is set (see telemetry.py), so tests/normal runs pay nothing.
+    tracer = get_tracer()
+    endpoint = f"{classifier_url}/classify"
+    with tracer.start_as_current_span("classify_and_writeback") as task_span:
+        task_span.set_attribute("notes_api.note_id", note_id)
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        attempts_made = attempt
-        try:
-            resp = httpx.post(
-                f"{classifier_url}/classify", json={"text": text}, timeout=10.0
+        result: dict[str, str] | None = None
+        last_exc: Exception | None = None
+        attempts_made = 0
+
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            attempts_made = attempt
+            with tracer.start_as_current_span("POST /classify") as http_span:
+                http_span.set_attribute("http.request.method", "POST")
+                http_span.set_attribute("url.full", endpoint)
+                http_span.set_attribute("notes_api.attempt", attempt)
+                try:
+                    resp = httpx.post(endpoint, json={"text": text}, timeout=10.0)
+                    if http_span.is_recording():
+                        http_span.set_attribute(
+                            "http.response.status_code", resp.status_code
+                        )
+                    resp.raise_for_status()
+                    result = resp.json()
+                    break
+                except httpx.HTTPStatusError as exc:
+                    last_exc = exc
+                    if http_span.is_recording():
+                        http_span.set_attribute("error.type", type(exc).__name__)
+                    if exc.response.status_code < 500:
+                        break  # client error — retrying the same body won't help
+                except httpx.HTTPError as exc:
+                    last_exc = exc
+                    if http_span.is_recording():
+                        http_span.set_attribute("error.type", type(exc).__name__)
+                except Exception as exc:
+                    last_exc = exc
+                    if http_span.is_recording():
+                        http_span.set_attribute("error.type", type(exc).__name__)
+                    break  # unexpected error shape — don't retry blindly
+
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(RETRY_BACKOFF_SECONDS[attempt - 1])
+
+        task_span.set_attribute("notes_api.enrichment.attempts", attempts_made)
+
+        if result is None:
+            logger.warning(
+                "classifier request failed for note %s after %d attempt(s): %r",
+                note_id,
+                attempts_made,
+                last_exc,
             )
-            resp.raise_for_status()
-            result = resp.json()
-            break
-        except httpx.HTTPStatusError as exc:
-            last_exc = exc
-            if exc.response.status_code < 500:
-                break  # client error — retrying the same body won't help
-        except httpx.HTTPError as exc:
-            last_exc = exc
-        except Exception as exc:
-            last_exc = exc
-            break  # unexpected error shape — don't retry blindly
+            task_span.set_attribute("notes_api.enrichment.status", "failed")
+            _write_enrichment_status(note_id, "failed")
+            return
 
-        if attempt < MAX_ATTEMPTS:
-            time.sleep(RETRY_BACKOFF_SECONDS[attempt - 1])
+        new_tags = classifier_tags(result)
+        if not new_tags:
+            logger.warning(
+                "classifier returned no tags for note %s: %r", note_id, result
+            )
+            task_span.set_attribute("notes_api.enrichment.status", "failed")
+            _write_enrichment_status(note_id, "failed")
+            return
 
-    if result is None:
-        logger.warning(
-            "classifier request failed for note %s after %d attempt(s): %r",
-            note_id,
-            attempts_made,
-            last_exc,
-        )
-        _write_enrichment_status(note_id, "failed")
-        return
-
-    new_tags = classifier_tags(result)
-    if not new_tags:
-        logger.warning("classifier returned no tags for note %s: %r", note_id, result)
-        _write_enrichment_status(note_id, "failed")
-        return
-
-    # Fresh session: the request's session is closed once the response is sent.
-    db = SessionLocal()
-    try:
-        service = NoteService(db)
-        note = service.get_by_id(note_id)  # raises 404 if deleted before writeback
-        merged = merge_tags(note.tags, new_tags)
-        note.tags = merged
-        note.enrichment_status = "done"
-        db.commit()
-        logger.info("note %s classified; tags written back: %s", note_id, new_tags)
-    except Exception:
-        logger.warning(
-            "writeback skipped for note %s (likely deleted before writeback)",
-            note_id,
-        )
-    finally:
-        db.close()
+        # Fresh session: the request's session is closed once the response is sent.
+        db = SessionLocal()
+        try:
+            service = NoteService(db)
+            note = service.get_by_id(note_id)  # raises 404 if deleted pre-writeback
+            merged = merge_tags(note.tags, new_tags)
+            note.tags = merged
+            note.enrichment_status = "done"
+            db.commit()
+            task_span.set_attribute("notes_api.enrichment.status", "done")
+            logger.info("note %s classified; tags written back: %s", note_id, new_tags)
+        except Exception:
+            task_span.set_attribute("notes_api.enrichment.status", "writeback_skipped")
+            logger.warning(
+                "writeback skipped for note %s (likely deleted before writeback)",
+                note_id,
+            )
+        finally:
+            db.close()
