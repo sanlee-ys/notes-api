@@ -10,7 +10,19 @@ dependencies = [
     "pydantic>=2.0.0",
     "httpx>=0.27.0",
     "python-dotenv>=1.0.0",
+    # Observability: the enrichment task is instrumented against the OTel API
+    # always; the SDK only records/exports when NOTES_API_TRACING is set (see
+    # notes_api/telemetry.py), mirroring kb-agent and the classifier. API + SDK are
+    # core so the no-op-when-disabled path works out of the box; the OTLP wire
+    # exporter is the optional `otlp` extra below.
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
 ]
+
+[project.optional-dependencies]
+# Export spans to an OpenTelemetry collector over OTLP/HTTP. The console exporter
+# (stderr) needs no infrastructure and is always available without this extra.
+otlp = ["opentelemetry-exporter-otlp-proto-http>=1.20.0"]
 
 [dependency-groups]
 dev = [
@@ -61,3 +73,10 @@ convention = "google"
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[[tool.mypy.overrides]]
+# The OTLP span exporter is an optional extra (`otlp`) and may be absent from the
+# base env; its import in telemetry.py is already guarded by try/except
+# ImportError at runtime, so let mypy tolerate the missing stub.
+module = "opentelemetry.exporter.otlp.*"
+ignore_missing_imports = true
