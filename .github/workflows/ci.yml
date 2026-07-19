@@ -39,5 +39,11 @@ jobs:
       - name: Contract matches the provider (SYS-018)
         run: uv run python scripts/check_classify_contract.py
 
+      # This repo is also the PROVIDER on the SYS-006 GET /notes seam, which
+      # kb-agent consumes. A stale published contract is worse than none — a
+      # consumer would assert against a shape this service no longer returns.
+      - name: Read contract artifact is current (SYS-006)
+        run: uv run python scripts/gen_contract_schema.py --check
+
       - name: Test
         run: uv run pytest --cov=notes_api --cov-report=term-missing

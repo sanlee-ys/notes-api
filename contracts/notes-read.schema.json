@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/sanlee-ys/notes-api/main/contracts/notes-read.schema.json",
+  "title": "GET /notes \u2014 200 response item",
+  "description": "The frozen read contract between notes-api (provider) and its consumers, governed by system/SYS-006 and enforced per SYS-018. Consumers read a SUBSET of these fields, so ADDING a field is backward-compatible and this schema is intentionally open. REMOVING or RENAMING a field a consumer reads is breaking, and because consumers parse defensively it fails silently rather than loudly \u2014 which is why it is checked in CI rather than trusted.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "id",
+    "title",
+    "content",
+    "tags",
+    "enrichment_status",
+    "published_at",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array"
+    },
+    "enrichment_status": {
+      "type": "string"
+    },
+    "published_at": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  }
+}
