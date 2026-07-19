@@ -6,7 +6,12 @@ import httpx
 
 from notes_api import tasks
 from notes_api.models import Note
-from notes_api.tasks import classifier_tags, merge_tags
+from notes_api.tasks import (
+    CLASSIFIER_PREFIXES,
+    CLASSIFY_FIELD_TAGS,
+    classifier_tags,
+    merge_tags,
+)
 
 
 class _FakeResponse:
@@ -31,9 +36,17 @@ class _FakeErrorResponse:
 
 
 class TestClassifierTags:
-    def test_namespaces_both_fields(self):
-        result = {"category": "procurement", "operational_domain": "air"}
-        assert classifier_tags(result) == ["category:procurement", "domain:air"]
+    def test_namespaces_all_three_fields(self):
+        result = {
+            "category": "procurement",
+            "operational_domain": "air",
+            "region": "americas",
+        }
+        assert classifier_tags(result) == [
+            "category:procurement",
+            "domain:air",
+            "region:americas",
+        ]
 
     def test_skips_missing_fields(self):
         assert classifier_tags({"category": "policy"}) == ["category:policy"]
@@ -43,6 +56,60 @@ class TestClassifierTags:
         assert classifier_tags({"category": "", "operational_domain": "sea"}) == [
             "domain:sea"
         ]
+
+    def test_ignores_unmapped_provider_fields(self):
+        """An unadopted provider field is dropped, not fatal.
+
+        This tolerance is why the v3.0.0 `region` addition did not break this
+        service — and also why it went unnoticed. The cross-repo contract check
+        is what makes such an addition loud; this function stays forgiving.
+        """
+        result = {
+            "category": "policy",
+            "operational_domain": "cyber",
+            "region": "europe",
+            "confidence": "0.91",
+        }
+        assert classifier_tags(result) == [
+            "category:policy",
+            "domain:cyber",
+            "region:europe",
+        ]
+
+
+class TestClassifierPrefixesStayDerived:
+    """`CLASSIFIER_PREFIXES` must cover every namespace `classifier_tags` emits.
+
+    If a namespace is added to CLASSIFY_FIELD_TAGS but missed in the prefix list,
+    `merge_tags` stops recognising those tags as its own, treats them as user
+    tags, and reprocessing accumulates duplicates instead of converging —
+    silently breaking the idempotency SYS-005 freezes. Deriving one from the
+    other makes that impossible; this test pins the invariant so a future edit
+    cannot quietly un-derive it.
+    """
+
+    def test_every_emitted_namespace_is_a_known_prefix(self):
+        emitted = classifier_tags({field: "x" for field in CLASSIFY_FIELD_TAGS})
+        for tag in emitted:
+            assert tag.startswith(CLASSIFIER_PREFIXES), (
+                f"{tag!r} is not covered by CLASSIFIER_PREFIXES; reprocessing "
+                f"would accumulate it instead of replacing it."
+            )
+
+    def test_region_tags_are_replaced_not_accumulated(self):
+        """The concrete regression the derivation prevents."""
+        result = {
+            "category": "operations",
+            "operational_domain": "air",
+            "region": "middle-east",
+        }
+        first = classifier_tags(result)
+        # Reprocess the same note: the region label changes upstream.
+        result_v2 = {**result, "region": "europe"}
+        merged = merge_tags(["mine", *first], classifier_tags(result_v2))
+        assert "mine" in merged
+        assert merged.count("region:middle-east") == 0
+        assert merged.count("region:europe") == 1
 
 
 class TestMergeTags:

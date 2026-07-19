@@ -31,5 +31,13 @@ jobs:
       - name: Type check
         run: uv run mypy src/
 
+      # notes-api is the SECOND consumer on the SYS-004 /classify seam. This is
+      # the only check here that looks OUTWARD — everything else asserts this
+      # code against fixtures this repo controls, which is why the provider
+      # adding `region` went unnoticed for a day while CI stayed green.
+      # Divergence fails; a fetch failure warns and passes (SYS-018).
+      - name: Contract matches the provider (SYS-018)
+        run: uv run python scripts/check_classify_contract.py
+
       - name: Test
         run: uv run pytest --cov=notes_api --cov-report=term-missing
