@@ -45,5 +45,12 @@ jobs:
       - name: Read contract artifact is current (SYS-006)
         run: uv run python scripts/gen_contract_schema.py --check
 
+      # Ports the architecture repo's 'Downstream surfaces' rule down to this repo's
+      # own ADR tier, which had no check at all. Note both existing ADRs predate the
+      # rule and are grandfathered, so today this enforces only the Status-header and
+      # duplicate-number checks — its real value starts at ADR-003.
+      - name: ADRs list their downstream surfaces
+        run: uv run python scripts/lint_decisions.py
+
       - name: Test
         run: uv run pytest --cov=notes_api --cov-report=term-missing
