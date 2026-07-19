@@ -33,9 +33,29 @@ from .telemetry import get_tracer
 
 logger = logging.getLogger(__name__)
 
+# This consumer's belief about the frozen /classify response shape (SYS-004),
+# and the tag namespace each field is encoded under. Kept in one place so the
+# runtime encoder, the replace-semantics prefix list, and the cross-repo contract
+# check cannot disagree — two copies of a shape drifting apart unnoticed is the
+# exact failure SYS-018 exists to prevent.
+#
+# The rename operational_domain -> domain: is deliberate and part of the frozen
+# encoding.
+CLASSIFY_FIELD_TAGS: dict[str, str] = {
+    "category": "category",
+    "operational_domain": "domain",
+    "region": "region",
+}
+
 # Classifier-owned tags are namespaced so the writeback can replace only its own
 # prior tags on reprocessing, never a user's hand-applied tags (SYS-005).
-CLASSIFIER_PREFIXES = ("category:", "domain:")
+#
+# DERIVED, not hand-listed: if a namespace is added to CLASSIFY_FIELD_TAGS but
+# missed here, merge_tags stops recognising those tags as its own, treats them as
+# user tags, and reprocessing accumulates duplicates instead of converging —
+# silently breaking the idempotency SYS-005 freezes. Deriving makes that
+# impossible.
+CLASSIFIER_PREFIXES = tuple(f"{ns}:" for ns in CLASSIFY_FIELD_TAGS.values())
 TAG_CAP = 20
 
 MAX_ATTEMPTS = 3
@@ -45,14 +65,26 @@ RETRY_BACKOFF_SECONDS = (2, 4)
 
 
 def classifier_tags(result: dict[str, str]) -> list[str]:
-    """Encode the classifier's two-field response as namespaced tags."""
+    """Encode the classifier's response fields as namespaced tags.
+
+    Reads only the fields in ``CLASSIFY_FIELD_TAGS``. A field the classifier
+    sends that is not mapped here is ignored rather than fatal — that tolerance
+    is why the v3.0.0 ``region`` addition did not break this service, and also
+    why it went unnoticed for a day. The cross-repo contract check is what makes
+    such an addition loud; this function stays forgiving on purpose.
+
+    Args:
+        result: The parsed ``/classify`` 200 body.
+
+    Returns:
+        Namespaced tags, in ``CLASSIFY_FIELD_TAGS`` order. Missing or empty
+        fields are skipped so a partial response still enriches what it can.
+    """
     tags: list[str] = []
-    category = result.get("category")
-    domain = result.get("operational_domain")
-    if category:
-        tags.append(f"category:{category}")
-    if domain:
-        tags.append(f"domain:{domain}")
+    for field, namespace in CLASSIFY_FIELD_TAGS.items():
+        value = result.get(field)
+        if value:
+            tags.append(f"{namespace}:{value}")
     return tags
 
 
