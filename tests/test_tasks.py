@@ -357,3 +357,168 @@ class TestClassifyAndWritebackRetry:
         refreshed = check.query(Note).filter(Note.id == note_id).first()
         check.close()
         assert refreshed.enrichment_status == "failed"
+
+
+class TestClassifyAndWritebackOutcomes:
+    """The terminal states a *successful* classifier call can still land in.
+
+    The HTTP hop succeeding is not the same as the enrichment landing: the
+    response can carry nothing this service knows how to encode, and the note
+    can be gone by the time the writeback session opens.
+    """
+
+    def _seed(self, session_factory, tags):
+        seed = session_factory()
+        note = Note(title="t", content="c")
+        note.tags = tags
+        seed.add(note)
+        seed.commit()
+        seed.refresh(note)
+        note_id = note.id
+        seed.close()
+        return note_id
+
+    def test_response_with_no_mapped_fields_sets_failed(
+        self, monkeypatch, session_factory, caplog
+    ):
+        """A 200 carrying only unmapped fields yields no tags — that's a failure.
+
+        ``classifier_tags`` is deliberately forgiving about unknown fields, so
+        this is the only place an all-unknown response becomes visible.
+        """
+        note_id = self._seed(session_factory, ["keep"])
+
+        calls = []
+        sleeps = []
+
+        def _post(*a, **k):
+            calls.append(1)
+            return _FakeResponse({"sentiment": "neutral", "confidence": "0.9"})
+
+        monkeypatch.setattr(tasks.httpx, "post", _post)
+        monkeypatch.setattr(tasks.time, "sleep", lambda seconds: sleeps.append(seconds))
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+        monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
+
+        with caplog.at_level(logging.WARNING, logger="notes_api.tasks"):
+            tasks.classify_and_writeback(note_id, "c")
+
+        # The HTTP hop succeeded, so there is nothing to retry or back off from.
+        assert len(calls) == 1
+        assert sleeps == []
+        assert any(
+            "no tags" in rec.message and str(note_id) in rec.message
+            for rec in caplog.records
+        )
+        check = session_factory()
+        refreshed = check.query(Note).filter(Note.id == note_id).first()
+        check.close()
+        assert list(refreshed.tags) == ["keep"]  # user tags untouched
+        assert refreshed.enrichment_status == "failed"
+
+    def test_all_empty_values_set_failed(self, monkeypatch, session_factory):
+        """Every mapped field present but blank is equally unenrichable."""
+        note_id = self._seed(session_factory, [])
+
+        monkeypatch.setattr(
+            tasks.httpx,
+            "post",
+            lambda *a, **k: _FakeResponse(
+                {"category": "", "operational_domain": "", "region": ""}
+            ),
+        )
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+        monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
+
+        tasks.classify_and_writeback(note_id, "c")
+
+        check = session_factory()
+        refreshed = check.query(Note).filter(Note.id == note_id).first()
+        check.close()
+        assert refreshed.tags == []
+        assert refreshed.enrichment_status == "failed"
+
+    def test_note_deleted_before_writeback_is_skipped_not_raised(
+        self, monkeypatch, session_factory, caplog
+    ):
+        """A note deleted mid-flight must not surface as an unhandled error.
+
+        The task runs after the response is sent, so nothing is left to catch
+        an exception — the writeback logs and returns instead.
+        """
+        note_id = self._seed(session_factory, [])
+
+        purge = session_factory()
+        purge.delete(purge.query(Note).filter(Note.id == note_id).first())
+        purge.commit()
+        purge.close()
+
+        monkeypatch.setattr(
+            tasks.httpx,
+            "post",
+            lambda *a, **k: _FakeResponse(
+                {"category": "policy", "operational_domain": "cyber"}
+            ),
+        )
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+        monkeypatch.setenv("CLASSIFIER_URL", "http://fake-classifier")
+
+        with caplog.at_level(logging.WARNING, logger="notes_api.tasks"):
+            tasks.classify_and_writeback(note_id, "c")
+
+        assert any(
+            "writeback skipped" in rec.message and str(note_id) in rec.message
+            for rec in caplog.records
+        )
+        check = session_factory()
+        assert check.query(Note).filter(Note.id == note_id).first() is None
+        check.close()
+
+
+class TestWriteEnrichmentStatus:
+    def test_missing_note_is_a_silent_noop(self, monkeypatch, session_factory):
+        """Best-effort by contract: a vanished note is not an error to raise."""
+        monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+
+        tasks._write_enrichment_status(4242, "failed")
+
+        check = session_factory()
+        assert check.query(Note).count() == 0
+        check.close()
+
+    def test_commit_failure_is_swallowed_and_logged(
+        self, monkeypatch, session_factory, caplog
+    ):
+        """A broken session must not take the enrichment task down with it."""
+        seed = session_factory()
+        note = Note(title="t", content="c")
+        note.tags = []
+        seed.add(note)
+        seed.commit()
+        seed.refresh(note)
+        note_id = note.id
+        seed.close()
+
+        class _BrokenSession:
+            def __init__(self):
+                self._real = session_factory()
+                self.closed = False
+
+            def query(self, *a, **k):
+                return self._real.query(*a, **k)
+
+            def commit(self):
+                raise RuntimeError("database went away")
+
+            def close(self):
+                self.closed = True
+                self._real.close()
+
+        broken = _BrokenSession()
+        monkeypatch.setattr(tasks, "SessionLocal", lambda: broken)
+
+        with caplog.at_level(logging.ERROR, logger="notes_api.tasks"):
+            tasks._write_enrichment_status(note_id, "done")
+
+        assert any(str(note_id) in rec.message for rec in caplog.records)
+        assert broken.closed  # the session is released even on the failure path
