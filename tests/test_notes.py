@@ -234,6 +234,35 @@ class TestSetTags:
         resp = client.put(f"/notes/{note['id']}/tags", json={"tags": []})
         assert resp.json()["tags"] == []
 
+    def test_tag_too_long_422(self, client):
+        note = _create(client, tags=["old"])
+        resp = client.put(f"/notes/{note['id']}/tags", json={"tags": ["x" * 51]})
+        assert resp.status_code == 422
+        assert client.get(f"/notes/{note['id']}").json()["tags"] == ["old"]
+
+    def test_too_many_tags_422(self, client):
+        note = _create(client, tags=["old"])
+        resp = client.put(
+            f"/notes/{note['id']}/tags", json={"tags": [str(i) for i in range(21)]}
+        )
+        assert resp.status_code == 422
+        assert client.get(f"/notes/{note['id']}").json()["tags"] == ["old"]
+
+    def test_at_the_limits_200(self, client):
+        """20 tags and a 50-character tag are the ceilings, not over them."""
+        note = _create(client)
+        resp = client.put(
+            f"/notes/{note['id']}/tags",
+            json={"tags": ["x" * 50] + [str(i) for i in range(19)]},
+        )
+        assert resp.status_code == 200
+        assert len(resp.json()["tags"]) == 20
+
+    def test_bad_tags_on_missing_note_is_422_not_404(self, client):
+        # Validation happens at the edge, before the service looks the note up.
+        resp = client.put("/notes/9999/tags", json={"tags": ["x" * 51]})
+        assert resp.status_code == 422
+
 
 # --- DELETE ---
 
