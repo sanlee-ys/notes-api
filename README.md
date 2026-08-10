@@ -5,7 +5,8 @@
 A personal **Notes REST API** built with **Python / FastAPI**. It stores notes with
 optional tags, supports case-insensitive substring search, and has an optional background enrichment
 seam: after a note is saved, it calls the `defense-news-classifier` service and
-writes the predicted `category` and `operational_domain` tags back to the note.
+writes the predicted labels back as namespaced tags — `category:…`, `domain:…`
+(from `operational_domain`), and `region:…`.
 
 Previously written in Java/Spring Boot as a "get back into Java" exercise. Ported
 to Python to match the rest of the portfolio stack and reduce cognitive load. The
