@@ -23,6 +23,14 @@ architectural trade-off.
 
 ## Architecture
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/architecture-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="images/architecture-light.svg">
+    <img alt="notes-api architecture: HTTP → router → service → models → SQLite/Postgres, with BackgroundTasks enrichment to classifier (CLASSIFIER_URL)" src="images/architecture-dark.svg" width="920">
+  </picture>
+</p>
+
 ```
 HTTP → router.py → service.py → models.py → SQLite / PostgreSQL
                  ↘ BackgroundTasks → classifier (CLASSIFIER_URL, optional)
