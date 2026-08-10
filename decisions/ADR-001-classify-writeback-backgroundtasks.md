@@ -9,9 +9,10 @@
 ## Context
 
 The notes-api POST /notes endpoint optionally enriches a newly-created note with
-classification tags from the defense-news-classifier service (`category` +
-`operational_domain`). The v1 Java implementation published a `NoteCreated` event to
-a Kafka topic; the classifier consumed it and called back via `PUT /notes/{id}/tags`.
+classification tags from the defense-news-classifier service (`category`,
+`operational_domain` as `domain:` tags, and `region`). The v1 Java implementation
+published a `NoteCreated` event to a Kafka topic; the classifier consumed it and
+called back via `PUT /notes/{id}/tags`.
 
 The service was ported from Java/Spring Boot to Python/FastAPI to reduce cognitive
 overhead (maintaining Java + Python + ML simultaneously is too much parallel context
