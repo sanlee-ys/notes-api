@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .models import Note, NoteTag
+from .models import EnrichmentJob, Note, NoteTag
 from .schemas import NoteRequest, TagsRequest
 
 
@@ -74,10 +74,23 @@ class NoteService:
         return note
 
     def create(self, req: NoteRequest) -> Note:
-        """Persist a new note and return it with generated fields populated."""
+        """Persist a new note and a queued enrichment job in one commit.
+
+        The job row is the durable outbox (ADR-003). A process crash after the
+        201 response must not drop the enrichment. ``payload_text`` is the
+        title-plus-content snapshot from create time.
+        """
         note = Note(title=req.title, content=req.content, published_at=req.published_at)
         note.tags = req.tags
         self.db.add(note)
+        self.db.flush()
+        self.db.add(
+            EnrichmentJob(
+                note_id=note.id,
+                payload_text=f"{note.title}\n{note.content}",
+                status="queued",
+            )
+        )
         self.db.commit()
         self.db.refresh(note)
         return note

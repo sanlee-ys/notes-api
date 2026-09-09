@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .schemas import NoteRequest, NoteResponse, TagsRequest
 from .service import NoteService
-from .tasks import classify_and_writeback
+from .tasks import process_due_jobs
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -50,10 +50,9 @@ def create_note(
 ) -> NoteResponse:
     """Create a note; classifier tags are added asynchronously after creation."""
     note = NoteService(db).create(req)
-    # Fire-and-forget enrichment (SYS-005). No-op unless CLASSIFIER_URL is set.
-    background_tasks.add_task(
-        classify_and_writeback, note.id, f"{note.title}\n{note.content}"
-    )
+    # Durable outbox row is in the same commit as the note (ADR-003). This kick
+    # drains due jobs after the 201 so TestClient still runs work in-process.
+    background_tasks.add_task(process_due_jobs)
     return note  # type: ignore[return-value]
 
 

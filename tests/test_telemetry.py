@@ -6,13 +6,23 @@ NOTES_API_TRACING is set, so a normal run and the rest of the suite stay no-op;
 child POST span — with the HTTP and enrichment-status attributes, captured
 through an in-memory exporter injected via the tracer accessor (the global
 provider is never touched, so the test stays isolated).
+
+``contracts/otel-spans.json`` lists the required span names for that run. A
+rename of either name, or a captured run that drops one, fails this suite.
 """
+
+import json
+from pathlib import Path
 
 import pytest
 
 from notes_api import tasks
 from notes_api.models import Note
 from notes_api.telemetry import _enabled, setup_tracing
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+OTEL_SPANS_PATH = REPO_ROOT / "contracts" / "otel-spans.json"
+REQUIRED_SPAN_NAMES = ["classify_and_writeback", "POST /classify"]
 
 
 class _FakeResponse:
@@ -133,6 +143,11 @@ class TestSetupTracingEnabled:
         assert "--extra otlp" in message
 
 
+def test_otel_span_contract_lists_required_names():
+    names = json.loads(OTEL_SPANS_PATH.read_text(encoding="utf-8"))
+    assert names == REQUIRED_SPAN_NAMES
+
+
 def test_enrichment_emits_span_tree_with_attributes(monkeypatch, session_factory):
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -165,8 +180,11 @@ def test_enrichment_emits_span_tree_with_attributes(monkeypatch, session_factory
     tasks.classify_and_writeback(note_id, "Senate approves cyber budget")
 
     spans = {s.name: s for s in exporter.get_finished_spans()}
-    assert "classify_and_writeback" in spans
-    assert "POST /classify" in spans
+    required = json.loads(OTEL_SPANS_PATH.read_text(encoding="utf-8"))
+    missing = [name for name in required if name not in spans]
+    assert (
+        not missing
+    ), f"enrichment dropped required span names {missing}; emitted {sorted(spans)}"
 
     http_span = spans["POST /classify"]
     assert http_span.attributes["http.request.method"] == "POST"

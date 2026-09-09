@@ -1,6 +1,6 @@
 """Optional OpenTelemetry tracing for the classifier enrichment seam.
 
-The background enrichment task (``tasks.classify_and_writeback``) is instrumented
+The enrichment worker (``tasks.classify_and_writeback``) is instrumented
 against the OpenTelemetry **API**, whose default tracer is a no-op that records
 nothing and costs nothing. The **SDK** that actually records and exports spans is
 configured only when ``NOTES_API_TRACING`` is set (via :func:`setup_tracing`,

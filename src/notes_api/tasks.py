@@ -1,15 +1,20 @@
 """Background enrichment: classify a new note and write labels back as tags.
 
 This implements the writeback half of the SYS-005 classify-and-writeback contract.
-The task runs in-process via FastAPI BackgroundTasks (no broker); it calls the
-classifier's HTTP `/classify` seam (SYS-004) and writes the predicted labels back
-as namespaced tags with replace semantics so reprocessing is idempotent (R1).
+Jobs live in the SQLite outbox (``EnrichmentJob``, ADR-003) so a process crash
+after ``POST /notes`` does not drop the work. FastAPI BackgroundTasks is only
+the same-process kick that drains due jobs after the HTTP response; a small
+asyncio loop in the app lifespan does the same drain on a timer. There is no
+broker. The worker calls the classifier's HTTP `/classify` seam (SYS-004) and
+writes the predicted labels back as namespaced tags with replace semantics so
+reprocessing is idempotent (R1).
 
 Enrichment status lifecycle:
   pending → done   (classifier returned labels and they were written back)
   pending → failed (classifier error, unreachable, or returned no labels)
 
-When CLASSIFIER_URL is unset (dev/test), the task is a no-op and status stays
+When CLASSIFIER_URL is unset (dev/test), ``classify_and_writeback`` is a no-op
+and ``process_due_jobs`` leaves the job ``queued``. Note status stays
 "pending" — that signals "not configured" rather than "failed."
 
 Per SYS-013 (self-healing by default), the classifier call retries transient
@@ -23,11 +28,12 @@ silently masked.
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from .database import SessionLocal
-from .models import Note
+from .models import EnrichmentJob, Note
 from .service import NoteService
 from .telemetry import get_tracer
 
@@ -62,6 +68,12 @@ MAX_ATTEMPTS = 3
 # Backoff after attempt 1 and attempt 2 respectively; matches the schedule in
 # learning-notes' retry-with-backoff writeup.
 RETRY_BACKOFF_SECONDS = (2, 4)
+
+# Outbox drain: claim at most this many due jobs per kick or poll.
+DEFAULT_JOB_LIMIT = 10
+# Claim lease. A ``running`` row whose ``available_at`` is still in the future
+# is in flight in this process; a due ``running`` row is a crash leftover.
+CLAIM_LEASE_SECONDS = 60
 
 
 def classifier_tags(result: dict[str, str]) -> list[str]:
@@ -222,3 +234,141 @@ def classify_and_writeback(note_id: int, text: str) -> None:
             )
         finally:
             db.close()
+
+
+def recover_stale_jobs() -> int:
+    """Reset jobs left ``running`` after a process crash back to ``queued``.
+
+    Startup calls this before the poll loop so a kill mid-claim does not leave
+    work stuck. ``available_at`` is set to now so the next drain may claim them.
+
+    Returns:
+        The number of jobs reset.
+    """
+    db = SessionLocal()
+    try:
+        jobs = db.query(EnrichmentJob).filter(EnrichmentJob.status == "running").all()
+        if not jobs:
+            return 0
+        now = datetime.now(timezone.utc)
+        for job in jobs:
+            job.status = "queued"
+            job.available_at = now
+        db.commit()
+        logger.info("requeued %d stale enrichment job(s) after crash", len(jobs))
+        return len(jobs)
+    except Exception:
+        logger.exception("failed to recover stale enrichment jobs")
+        db.rollback()
+        return 0
+    finally:
+        db.close()
+
+
+def process_due_jobs(limit: int = DEFAULT_JOB_LIMIT) -> int:
+    """Claim due outbox jobs and run ``classify_and_writeback`` for each.
+
+    Due means ``available_at`` is now or past, and status is ``queued`` or
+    crashed ``running``. When ``CLASSIFIER_URL`` is unset, this returns 0 and
+    does not claim: jobs stay ``queued`` and note status stays ``pending``.
+
+    Retry and backoff for the classifier hop stay inside
+    ``classify_and_writeback`` (SYS-013). This function marks the job
+    ``done`` or ``failed`` from the note's enrichment status.
+
+    Args:
+        limit: Maximum number of jobs to claim in this drain.
+
+    Returns:
+        The number of jobs claimed (and then run).
+    """
+    if not os.getenv("CLASSIFIER_URL", ""):
+        return 0
+
+    job_ids = _claim_due_jobs(limit)
+    for job_id in job_ids:
+        _run_claimed_job(job_id)
+    return len(job_ids)
+
+
+def _claim_due_jobs(limit: int) -> list[int]:
+    """Mark due jobs ``running`` and return their ids."""
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        jobs = (
+            db.query(EnrichmentJob)
+            .filter(
+                EnrichmentJob.status.in_(("queued", "running")),
+                EnrichmentJob.available_at <= now,
+            )
+            .order_by(EnrichmentJob.created_at.asc())
+            .limit(limit)
+            .all()
+        )
+        if not jobs:
+            return []
+        lease_until = now + timedelta(seconds=CLAIM_LEASE_SECONDS)
+        claimed: list[int] = []
+        for job in jobs:
+            job.status = "running"
+            job.attempts += 1
+            job.available_at = lease_until
+            claimed.append(job.id)
+        db.commit()
+        return claimed
+    except Exception:
+        logger.exception("failed to claim due enrichment jobs")
+        db.rollback()
+        return []
+    finally:
+        db.close()
+
+
+def _run_claimed_job(job_id: int) -> None:
+    """Run classify-and-writeback for one claimed job and record the outcome."""
+    db = SessionLocal()
+    try:
+        job = db.query(EnrichmentJob).filter(EnrichmentJob.id == job_id).first()
+        if job is None:
+            return
+        note_id = job.note_id
+        text = job.payload_text
+    finally:
+        db.close()
+
+    error: str | None = None
+    try:
+        classify_and_writeback(note_id, text)
+    except Exception as exc:
+        error = repr(exc)
+        logger.exception("enrichment job %s raised", job_id)
+
+    db = SessionLocal()
+    try:
+        job = db.query(EnrichmentJob).filter(EnrichmentJob.id == job_id).first()
+        if job is None:
+            return
+        if error is not None:
+            job.status = "failed"
+            job.last_error = error
+            db.commit()
+            return
+        note = db.query(Note).filter(Note.id == job.note_id).first()
+        if note is None or note.enrichment_status == "done":
+            job.status = "done"
+            job.last_error = None
+        elif note.enrichment_status == "failed":
+            job.status = "failed"
+            if job.last_error is None:
+                job.last_error = "classifier enrichment failed"
+        else:
+            # pending: classifier was not configured. Do not mark failed.
+            job.status = "queued"
+            job.available_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        logger.exception("failed to record outcome for enrichment job %s", job_id)
+        db.rollback()
+    finally:
+        db.close()
