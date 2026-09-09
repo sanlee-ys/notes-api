@@ -1,0 +1,4 @@
+[
+  "classify_and_writeback",
+  "POST /classify"
+]

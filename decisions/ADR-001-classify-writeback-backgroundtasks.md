@@ -105,3 +105,10 @@ the residual value.
 > in-process only, so a worker crash mid-task still drops the enrichment for
 > that note. The durable-queue revisit trigger above is unchanged — retry
 > closes the "transient blip" gap, not the "worker died" one.
+
+> **Amendment (2026-09-09):** The cost "no at-least-once delivery / no replay"
+> is closed by [ADR-003](ADR-003-durable-enrichment-outbox.md). Enrichment jobs
+> now live in a SQLite outbox in the same commit as the note, so a process
+> crash after 201 does not drop the work. The no-Kafka decision in this ADR
+> still holds. `BackgroundTasks` remains only as a same-process kick. Do not
+> read this ADR as a ban on a durable in-process queue.

@@ -4,16 +4,18 @@
 
 A personal Notes REST API in Python / FastAPI. Notes take optional tags.
 Search is a case-insensitive substring. After a note is saved, an optional
-background call to `defense-news-classifier` writes namespaced tags:
-`category:…`, `domain:…` (from `operational_domain`), and `region:…`.
+classifier call writes namespaced tags: `category:…`, `domain:…` (from
+`operational_domain`), and `region:…`. The job is stored in a SQLite outbox
+so a process restart does not drop it. See `decisions/ADR-003`.
 
 First written in Java/Spring Boot. See `decisions/ADR-001`.
 
 ## Tech stack
 
 - **Python 3.11+**
-- **FastAPI:** HTTP layer, dependency injection, BackgroundTasks
-- **SQLAlchemy 2.x:** ORM. Tables: `notes` and `note_tags`.
+- **FastAPI:** HTTP layer, dependency injection. BackgroundTasks is only the
+  same-process kick after `POST /notes`.
+- **SQLAlchemy 2.x:** ORM. Tables: `notes`, `note_tags`, and `enrichment_jobs`.
 - **SQLite** (default, file `notes.db`) or **PostgreSQL** (set `DATABASE_URL`)
 - **Pydantic v2:** request and response validation
 - **uv:** dependency management (`pyproject.toml` + `uv.lock`)
@@ -24,18 +26,22 @@ First written in Java/Spring Boot. See `decisions/ADR-001`.
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="images/architecture-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="images/architecture-light.svg">
-    <img alt="notes-api architecture: HTTP → router → service → models → SQLite/Postgres, with BackgroundTasks enrichment to classifier (CLASSIFIER_URL)" src="images/architecture-dark.svg" width="920">
+    <img alt="notes-api architecture: HTTP → router → service → models → SQLite/Postgres, with a SQLite outbox to the classifier (CLASSIFIER_URL)" src="images/architecture-dark.svg" width="920">
   </picture>
 </p>
 
 ```
 HTTP → router.py → service.py → models.py → SQLite / PostgreSQL
-                 ↘ BackgroundTasks → classifier (CLASSIFIER_URL, optional)
+                 ↘ SQLite outbox → classifier (CLASSIFIER_URL, optional)
 ```
 
-- **`router.py`:** FastAPI router on `/notes`. Wires BackgroundTasks after POST.
+- **`router.py`:** FastAPI router on `/notes`. After POST, kicks the outbox drain.
 - **`service.py`:** business logic. Raises `HTTPException` on 404/conflict.
-- **`models.py`:** `Note` + `NoteTag` ORM entities. `tags` is a list property.
+  `create` writes the note and a queued `EnrichmentJob` in one commit.
+- **`models.py`:** `Note`, `NoteTag`, and `EnrichmentJob` ORM entities. `tags`
+  is a list property.
+- **`tasks.py`:** `classify_and_writeback` plus `process_due_jobs` /
+  `recover_stale_jobs`.
 - **`schemas.py`:** Pydantic `NoteRequest`, `TagsRequest`, `NoteResponse`.
 - **`database.py`:** engine + session factory. `DATABASE_URL` env var.
 
@@ -63,7 +69,12 @@ CLASSIFIER_URL=http://localhost:8000 \
   uvicorn notes_api.main:app --host ${HOST:-127.0.0.1} --port 8081
 ```
 
-If `CLASSIFIER_URL` is unset, classification is skipped.
+If `CLASSIFIER_URL` is unset, the job stays queued and
+`enrichment_status` stays `pending`. That is not a failure. Set the URL and
+restart (or wait for the poll loop) to drain the queue.
+
+The image in `Dockerfile` listens on `${PORT:-8081}`. `GET /health` returns
+200 with no classifier.
 
 ## API
 

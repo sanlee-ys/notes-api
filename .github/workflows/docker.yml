@@ -1,0 +1,83 @@
+name: docker
+
+# Builds the serving image and smoke-tests the running container.
+#
+# Why a separate workflow instead of a job in ci.yml: path filters in GitHub
+# Actions are workflow-level, not job-level. Keeping this in its own file is the
+# only way to skip the image build on the many changes that cannot affect it.
+on:
+  push:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/docker.yml'
+      - 'src/notes_api/**'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/docker.yml'
+      - 'src/notes_api/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Plain `docker build` on the runner's preinstalled Docker. No buildx,
+      # registry, or cache setup: the point is to prove the image builds from a
+      # clean state, and nothing is pushed anywhere.
+      - name: Build image
+        run: docker build -t notes-api:ci .
+
+      # /health must return 200 with no CLASSIFIER_URL and no extra secrets.
+      # SQLite writes notes.db under /app, which the image makes writable.
+      - name: Start container
+        run: |
+          docker run -d --name notes-api-smoke \
+            -p 8081:8081 \
+            notes-api:ci
+
+      # Poll rather than sleep a fixed amount: uvicorn's startup time varies on
+      # shared runners, and a fixed sleep is either flaky or wasteful. Bail early
+      # if the container has already exited.
+      - name: Wait for readiness and assert /health returns 200
+        run: |
+          for i in $(seq 1 30); do
+            if ! docker ps --filter name=notes-api-smoke --filter status=running \
+                 --format '{{.Names}}' | grep -q notes-api-smoke; then
+              echo "Container is no longer running after ${i}s."
+              exit 1
+            fi
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' http://localhost:8081/health || true)
+            if [ "$code" = "200" ]; then
+              echo "GET /health -> 200"
+              cat /tmp/health.json
+              python3 -c "import json; d=json.load(open('/tmp/health.json')); assert d.get('status')=='ok', d"
+              exit 0
+            fi
+            echo "attempt ${i}: /health returned '${code}', retrying..."
+            sleep 1
+          done
+          echo "Timed out waiting for a 200 from /health."
+          exit 1
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: docker logs notes-api-smoke || true
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f notes-api-smoke || true
